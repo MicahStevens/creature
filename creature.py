@@ -1379,64 +1379,104 @@ class CreatureBrowser(QMainWindow):
             self.single_tab = BrowserTab(self.profile)
             self.setCentralWidget(self.single_tab)
 
-        # Menu bar
-        self.create_menu_bar()
+        # Set up hamburger menu (replaces traditional menu bar)
+        self.setup_hamburger_menu()
 
-    def create_menu_bar(self):
-        menubar = self.menuBar()
-
-        # File menu
-        file_menu = menubar.addMenu('File')
-
+    def setup_hamburger_menu(self):
+        """Set up hamburger menu button in tab bar (replaces traditional menu bar)."""
+        from PyQt6.QtWidgets import QPushButton
+        
+        # Create hamburger menu button
+        self.hamburger_button = QPushButton('☰', self)
+        self.hamburger_button.setFixedSize(30, 24)
+        self.hamburger_button.setToolTip('Menu')
+        self.hamburger_button.clicked.connect(self.show_hamburger_menu)
+        
+        if not self.force_new_window and hasattr(self, 'tabs'):
+            # Add hamburger button to tab bar corner (right side)
+            from PyQt6.QtCore import Qt
+            self.tabs.setCornerWidget(self.hamburger_button, Qt.Corner.TopRightCorner)
+        else:
+            # For single tab mode, create a minimal toolbar with just the hamburger button
+            from PyQt6.QtWidgets import QToolBar, QWidget
+            from PyQt6.QtCore import Qt
+            
+            toolbar = QToolBar(self)
+            toolbar.setMovable(False)
+            toolbar.setFloatable(False)
+            
+            # Add spacer to push hamburger button to the right
+            spacer = QWidget()
+            spacer.setSizePolicy(spacer.sizePolicy().Expanding, spacer.sizePolicy().Expanding)
+            toolbar.addWidget(spacer)
+            toolbar.addWidget(self.hamburger_button)
+            
+            # Add toolbar to top
+            self.addToolBar(Qt.ToolBarArea.TopToolBarArea, toolbar)
+            
+        # Hide the traditional menu bar to save vertical space
+        self.menuBar().setVisible(False)
+    
+    def show_hamburger_menu(self):
+        """Show the hamburger menu with all menu options."""
+        from PyQt6.QtWidgets import QMenu
+        
+        menu = QMenu(self)
+        
+        # File section
         if not self.force_new_window:
             new_tab_action = QAction('New Tab', self)
             new_tab_action.setShortcut('Ctrl+T')
             new_tab_action.triggered.connect(self.add_new_tab)
-            file_menu.addAction(new_tab_action)
-            file_menu.addSeparator()
+            menu.addAction(new_tab_action)
+            menu.addSeparator()
 
         new_window_action = QAction('New Window', self)
         new_window_action.setShortcut('Ctrl+N')
         new_window_action.triggered.connect(self.new_window)
-        file_menu.addAction(new_window_action)
+        menu.addAction(new_window_action)
         
-        # Add separator before quit
-        file_menu.addSeparator()
+        menu.addSeparator()
         
-        # Quit action
-        quit_action = QAction('Quit', self)
-        quit_action.setShortcut('Ctrl+Q')
-        quit_action.triggered.connect(self.quit_application)
-        file_menu.addAction(quit_action)
-
-        # Profile menu
-        profile_menu = menubar.addMenu('Profile')
+        # Profile section
         profile_info_action = QAction(f'Profile: {self.profile_name.capitalize()} - Info', self)
         profile_info_action.triggered.connect(self.show_profile_info)
-        profile_menu.addAction(profile_info_action)
+        menu.addAction(profile_info_action)
+        
+        menu.addSeparator()
 
-        # Theme menu
-        theme_menu = menubar.addMenu('Theme')
+        # Theme section
+        theme_submenu = menu.addMenu('Themes')
         for theme_name in self.theme_manager.themes.keys():
             theme_action = QAction(theme_name.capitalize(), self)
             theme_action.setCheckable(True)
             theme_action.setChecked(theme_name == self.current_theme)
             theme_action.triggered.connect(lambda checked, t=theme_name: self.change_theme(t))
-            theme_menu.addAction(theme_action)
+            theme_submenu.addAction(theme_action)
         
-        # Help menu
-        help_menu = menubar.addMenu('Help')
+        menu.addSeparator()
         
+        # Help section
         help_action = QAction('Help...', self)
         help_action.setShortcut('F1')
         help_action.triggered.connect(self.show_help)
-        help_menu.addAction(help_action)
-        
-        help_menu.addSeparator()
+        menu.addAction(help_action)
         
         about_action = QAction('About Creature Browser', self)
         about_action.triggered.connect(self.show_about)
-        help_menu.addAction(about_action)
+        menu.addAction(about_action)
+        
+        menu.addSeparator()
+        
+        # Quit action at bottom
+        quit_action = QAction('Quit', self)
+        quit_action.setShortcut('Ctrl+Q')
+        quit_action.triggered.connect(self.quit_application)
+        menu.addAction(quit_action)
+        
+        # Show menu below the hamburger button
+        button_pos = self.hamburger_button.mapToGlobal(self.hamburger_button.rect().bottomLeft())
+        menu.popup(button_pos)
 
     def add_new_tab(self, url=None):
         if url is None or isinstance(url, bool):
@@ -1507,10 +1547,7 @@ class CreatureBrowser(QMainWindow):
         self.theme_manager.apply_theme(app, theme_name)
         self.current_theme = theme_name
         
-        # Update theme menu checkmarks
-        theme_menu = self.menuBar().actions()[2]  # Theme is the 3rd menu
-        for action in theme_menu.menu().actions():
-            action.setChecked(action.text().lower() == theme_name)
+        # Theme menu checkmarks are now handled dynamically in show_hamburger_menu()
     
     def show_help(self):
         """Show help dialog."""
