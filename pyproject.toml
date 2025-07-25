@@ -9,3 +9,42 @@ dependencies = [
     "pyqt6-webengine>=6.9.0",
     "configobj>=5.0.8",
 ]
+
+# Ruff configuration
+[tool.ruff]
+line-length = 250
+target-version = "py310"
+
+
+[tool.ruff.lint]
+select = [
+    "E",  # pycodestyle errors
+    "W",  # pycodestyle warnings
+    "F",  # pyflakes
+    "I",  # isort
+    "B",  # flake8-bugbear
+    "C4", # flake8-comprehensions
+    "UP", # pyupgrade
+]
+ignore = ["UP038", "B007", "I001"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+[tool.ruff.lint.per-file-ignores]
+"vms/hardware/scu/registers.py" = ["E501"]
+
+# MyPy configuration
+[tool.mypy]
+python_version = "3.12"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+exclude = "test|venv|build"
+
+# Pytest configuration
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py", "*_test.py"]
+addopts = "-v --tb=short"
