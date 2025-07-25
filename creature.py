@@ -1177,12 +1177,12 @@ class CreatureBrowser(QMainWindow):
         
         # Use config values if not overridden by arguments
         self.force_new_window = force_new_window if force_new_window is not None else creature_config.general.force_new_window
-        profile_name = profile_name or creature_config.general.default_profile
+        self.profile_name = profile_name or creature_config.general.default_profile
         
         # Get profile-specific theme if configured
         profile_theme = ""
-        if hasattr(creature_config, 'profiles') and profile_name in creature_config.profiles:
-            profile_config = creature_config.profiles[profile_name]
+        if hasattr(creature_config, 'profiles') and self.profile_name in creature_config.profiles:
+            profile_config = creature_config.profiles[self.profile_name]
             profile_theme = profile_config.get('theme', '')
         
         # Use profile theme, then command line theme, then general theme
@@ -1194,19 +1194,19 @@ class CreatureBrowser(QMainWindow):
         if not profile_dir.startswith('/'):
             profile_dir = Path.home() / profile_dir
         self.profile_manager = ProfileManager(profile_dir)
-        self.profile = self.profile_manager.create_profile(profile_name)
+        self.profile = self.profile_manager.create_profile(self.profile_name)
         
         # Get profile-specific title suffix
         title_suffix = ""
-        if hasattr(creature_config, 'profiles') and profile_name in creature_config.profiles:
-            profile_config = creature_config.profiles[profile_name]
+        if hasattr(creature_config, 'profiles') and self.profile_name in creature_config.profiles:
+            profile_config = creature_config.profiles[self.profile_name]
             title_suffix = profile_config.get('title_suffix', '')
         
         # Build window title
         if title_suffix:
-            self.setWindowTitle(f"Creature Browser - {profile_name} ({title_suffix})")
+            self.setWindowTitle(f"Creature Browser - {self.profile_name} ({title_suffix})")
         else:
-            self.setWindowTitle(f"Creature Browser - {profile_name}")
+            self.setWindowTitle(f"Creature Browser - {self.profile_name}")
         
         # Set application icon
         logo_path = Path(__file__).parent / "logo.png"
@@ -1272,7 +1272,7 @@ class CreatureBrowser(QMainWindow):
 
         # Profile menu
         profile_menu = menubar.addMenu('Profile')
-        profile_info_action = QAction('Profile Info', self)
+        profile_info_action = QAction(f'Profile: {self.profile_name.capitalize()} - Info', self)
         profile_info_action.triggered.connect(self.show_profile_info)
         profile_menu.addAction(profile_info_action)
 
@@ -1335,12 +1335,9 @@ class CreatureBrowser(QMainWindow):
     def new_window(self, url=None):
         if url is None or isinstance(url, bool):
             url = creature_config.general.home_page
-            
-        # Get current profile name from window title
-        profile_name = self.windowTitle().split("Profile: ")[1] if "Profile: " in self.windowTitle() else "default"
 
         # Create new window with same profile
-        new_browser = CreatureBrowser(profile_name, self.force_new_window)
+        new_browser = CreatureBrowser(self.profile_name, self.force_new_window)
         new_browser.show()
 
         if hasattr(new_browser, 'single_tab'):
@@ -1349,12 +1346,11 @@ class CreatureBrowser(QMainWindow):
             new_browser.add_new_tab(url)
 
     def show_profile_info(self):
-        profile_name = self.windowTitle().split("Profile: ")[1] if "Profile: " in self.windowTitle() else "default"
-        profile_path = self.profile_manager.get_profile_path(profile_name)
+        profile_path = self.profile_manager.get_profile_path(self.profile_name)
 
         msg = QMessageBox()
         msg.setWindowTitle("Profile Information")
-        msg.setText(f"Profile: {profile_name}\nPath: {profile_path}")
+        msg.setText(f"Profile: {self.profile_name}\nPath: {profile_path}")
         msg.exec()
     
     def quit_application(self):
