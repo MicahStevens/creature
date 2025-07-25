@@ -1260,6 +1260,15 @@ class CreatureBrowser(QMainWindow):
         new_window_action.setShortcut('Ctrl+N')
         new_window_action.triggered.connect(self.new_window)
         file_menu.addAction(new_window_action)
+        
+        # Add separator before quit
+        file_menu.addSeparator()
+        
+        # Quit action
+        quit_action = QAction('Quit', self)
+        quit_action.setShortcut('Ctrl+Q')
+        quit_action.triggered.connect(self.quit_application)
+        file_menu.addAction(quit_action)
 
         # Profile menu
         profile_menu = menubar.addMenu('Profile')
@@ -1347,6 +1356,16 @@ class CreatureBrowser(QMainWindow):
         msg.setWindowTitle("Profile Information")
         msg.setText(f"Profile: {profile_name}\nPath: {profile_path}")
         msg.exec()
+    
+    def quit_application(self):
+        """Quit the application gracefully."""
+        # Get the QApplication instance
+        app = QApplication.instance()
+        if app:
+            # Close all windows
+            app.closeAllWindows()
+            # Quit the application
+            app.quit()
 
     def change_theme(self, theme_name):
         app = QApplication.instance()
