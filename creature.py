@@ -7,17 +7,23 @@ from PyQt6.QtWidgets import (QApplication, QMainWindow, QVBoxLayout,
                             QWidget, QLineEdit, QPushButton, QHBoxLayout,
                             QTabWidget, QToolBar, QStyleFactory, QMessageBox,
                             QDialog, QListWidget, QDialogButtonBox, QLabel,
-                            QListWidgetItem)
+                            QListWidgetItem, QSplashScreen, QTextBrowser)
 from PyQt6.QtWebEngineWidgets import QWebEngineView
-from PyQt6.QtWebEngineCore import QWebEngineProfile, QWebEngineSettings
-from PyQt6.QtCore import QUrl, QStandardPaths, QDir
-from PyQt6.QtGui import QAction, QPalette, QColor, QShortcut, QKeySequence, QFont, QFontDatabase
+from PyQt6.QtWebEngineCore import QWebEngineProfile, QWebEngineSettings, QWebEngineScript
+from PyQt6.QtCore import QUrl, QStandardPaths, QDir, QTimer, Qt
+from PyQt6.QtGui import QAction, QPalette, QColor, QShortcut, QKeySequence, QFont, QFontDatabase, QPixmap, QIcon
 import json
 import re
 import urllib.parse
 from creature_config import config as creature_config
 from configobj import ConfigObj
 from validate import Validator
+from keepassxc_manager import keepass_manager, KeePassXCError
+
+# Application constants
+CREATURE_VERSION = "1.0.0"
+CREATURE_AUTHOR = "micah@benchtop.tech + Claude Code"
+CREATURE_LICENSE = "MIT"
 
 def process_url_or_search(input_text):
     """Process user input to determine if it's a URL or search query.
@@ -107,6 +113,13 @@ class ThemeManager:
         self.themes_dir = Path(__file__).parent / "themes"
         self.theme_spec = self.themes_dir / "theme.spec"
         self.themes = {}
+        
+        # Store the original system font size to prevent cumulative scaling
+        system_font = QFont()
+        self.original_font_size = system_font.pointSize()
+        if self.original_font_size <= 0:
+            self.original_font_size = 12  # Fallback
+        
         self.load_themes()
     
     def load_themes(self):
@@ -177,24 +190,28 @@ class ThemeManager:
         # Apply font family, weight, and style
         font = self.get_configured_font(app)
         
-        # Apply font size adjustment
-        if ui_config.font_size_adjustment != 0:
-            current_size = font.pointSize()
-            if current_size == -1:  # If point size is not set, use pixel size
-                current_size = font.pixelSize()
-                font.setPixelSize(max(8, current_size + ui_config.font_size_adjustment))
-            else:
-                font.setPointSize(max(8, current_size + ui_config.font_size_adjustment))
+        # Always use the original system font size as the base to prevent cumulative scaling
+        base_font_size = self.original_font_size
+        
+        # Apply font size adjustment to the original base size
+        final_font_size = base_font_size + ui_config.font_size_adjustment
+        font.setPointSize(max(8, final_font_size))
         
         app.setFont(font)
+        
+        # Clear any existing stylesheet first to prevent accumulation
+        app.setStyleSheet("")
         
         # Apply scale factor via stylesheet for better control
         if ui_config.scale_factor != 1.0:
             scale_factor = ui_config.scale_factor
+            # Calculate scaled font size from the final font size (not hardcoded 12)
+            scaled_font_size = int(final_font_size * scale_factor)
+            
             # Apply scaling through style sheet
             app.setStyleSheet(f"""
                 QWidget {{
-                    font-size: {int(12 * scale_factor)}px;
+                    font-size: {scaled_font_size}px;
                 }}
                 QLineEdit {{
                     min-height: {int(24 * scale_factor)}px;
@@ -226,8 +243,8 @@ class ThemeManager:
         """Get font based on configuration settings."""
         ui_config = creature_config.ui
         
-        # Start with the application's default font
-        font = QFont(app.font())
+        # Start with a clean system default font (not the current app font)
+        font = QFont()
         
         # Set font family
         font_family = ui_config.font_family.lower()
@@ -287,6 +304,719 @@ class ThemeManager:
             font.setItalic(False)
         
         return font
+
+class KeePassXCWebEngineView(QWebEngineView):
+    """Custom QWebEngineView with KeePassXC integration."""
+    
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.master_password = None
+        self._inject_bridge_script()
+    
+    def _inject_bridge_script(self):
+        """Inject the KeePassXC bridge JavaScript into all pages."""
+        if not keepass_manager.enabled:
+            print("[KeePassXC DEBUG] Bridge injection skipped - KeePassXC disabled")
+            return
+        
+        # Read the bridge script
+        bridge_script_path = Path(__file__).parent / "keepassxc_bridge.js"
+        print(f"[KeePassXC DEBUG] Looking for bridge script at: {bridge_script_path}")
+        if not bridge_script_path.exists():
+            print("[KeePassXC DEBUG] Warning: KeePassXC bridge script not found")
+            return
+        
+        try:
+            with open(bridge_script_path, 'r', encoding='utf-8') as f:
+                bridge_code = f.read()
+            print(f"[KeePassXC DEBUG] Bridge script loaded, {len(bridge_code)} characters")
+        except Exception as e:
+            print(f"[KeePassXC DEBUG] Failed to read KeePassXC bridge script: {e}")
+            return
+        
+        # Create and inject the script
+        script = QWebEngineScript()
+        script.setSourceCode(bridge_code)
+        script.setName("KeePassXCBridge")
+        script.setWorldId(QWebEngineScript.ScriptWorldId.MainWorld)  # Use MainWorld instead of ApplicationWorld
+        script.setInjectionPoint(QWebEngineScript.InjectionPoint.DocumentCreation)  # Inject earlier
+        script.setRunsOnSubFrames(True)
+        
+        self.page().scripts().insert(script)
+        print("[KeePassXC DEBUG] Bridge script injected successfully")
+    
+    def contextMenuEvent(self, event):
+        """Override context menu to add KeePassXC options."""
+        # Create our own context menu since PyQt6 doesn't have createStandardContextMenu
+        from PyQt6.QtWidgets import QMenu
+        menu = QMenu(self)
+        
+        # Get information about the clicked element
+        pos = event.pos()
+        js_code = f"""
+        (function() {{
+            var element = document.elementFromPoint({pos.x()}, {pos.y()});
+            if (!element) return null;
+            
+            if (['input', 'textarea'].includes(element.tagName.toLowerCase())) {{
+                return {{
+                    isFormField: true,
+                    type: element.type || 'text',
+                    name: element.name || '',
+                    id: element.id || '',
+                    placeholder: element.placeholder || '',
+                    isPassword: element.type === 'password',
+                    isEmail: element.type === 'email' || element.name.toLowerCase().includes('email'),
+                    isUsername: element.name.toLowerCase().includes('user') || 
+                               element.id.toLowerCase().includes('user') ||
+                               element.placeholder.toLowerCase().includes('user')
+                }};
+            }}
+            return null;
+        }})();
+        """
+        
+        # Add basic browser actions first
+        back_action = QAction("Back", self)
+        back_action.setEnabled(self.page().history().canGoBack())
+        back_action.triggered.connect(self.back)
+        menu.addAction(back_action)
+        
+        forward_action = QAction("Forward", self)
+        forward_action.setEnabled(self.page().history().canGoForward())
+        forward_action.triggered.connect(self.forward)
+        menu.addAction(forward_action)
+        
+        reload_action = QAction("Reload", self)
+        reload_action.triggered.connect(self.reload)
+        menu.addAction(reload_action)
+        
+        menu.addSeparator()
+        
+        # Execute JavaScript to get element info
+        self.page().runJavaScript(js_code, lambda result: self._show_context_menu(menu, event, result))
+    
+    def _show_context_menu(self, menu, event, element_info):
+        """Show context menu with KeePassXC options if applicable."""
+        # Add KeePassXC options only if enabled and configured
+        if keepass_manager.enabled and keepass_manager.config.show_context_menu:
+            if element_info and element_info.get('isFormField'):
+                menu.addSeparator()
+                
+                # Add KeePassXC actions
+                if element_info.get('isPassword'):
+                    fill_password_action = QAction("Fill Password from KeePassXC", self)
+                    fill_password_action.triggered.connect(lambda: self._fill_password(event.pos()))
+                    menu.addAction(fill_password_action)
+                elif element_info.get('isUsername') or element_info.get('isEmail'):
+                    fill_username_action = QAction("Fill Username from KeePassXC", self)
+                    fill_username_action.triggered.connect(lambda: self._fill_username(event.pos()))
+                    menu.addAction(fill_username_action)
+                else:
+                    # Generic field
+                    fill_field_action = QAction("Fill from KeePassXC", self)
+                    fill_field_action.triggered.connect(lambda: self._fill_generic_field(event.pos()))
+                    menu.addAction(fill_field_action)
+                
+                # Add fill form action
+                fill_form_action = QAction("Fill Login Form from KeePassXC", self)
+                fill_form_action.triggered.connect(self._fill_login_form)
+                menu.addAction(fill_form_action)
+                
+                # Add search entries action
+                search_action = QAction("Search KeePassXC Entries...", self)
+                search_action.triggered.connect(self._search_entries)
+                menu.addAction(search_action)
+        
+        # Show the menu
+        menu.popup(event.globalPos())
+    
+    def _get_master_password(self):
+        """Get master password from user if not cached."""
+        if self.master_password and keepass_manager.test_database_access(self.master_password):
+            return self.master_password
+        
+        # Prompt for master password
+        from PyQt6.QtWidgets import QInputDialog, QLineEdit
+        password, ok = QInputDialog.getText(
+            self, 
+            "KeePassXC Master Password", 
+            "Enter your KeePassXC master password:",
+            QLineEdit.EchoMode.Password
+        )
+        
+        if ok and password:
+            if keepass_manager.test_database_access(password):
+                self.master_password = password
+                return password
+            else:
+                QMessageBox.warning(self, "Error", "Invalid master password")
+        
+        return None
+    
+    def _fill_password(self, pos):
+        """Fill password into the currently focused field."""
+        password = self._get_master_password()
+        if not password:
+            return
+        
+        # Get entries for current domain
+        current_url = self.url().toString()
+        entries = keepass_manager.search_by_url(current_url, password)
+        
+        if not entries:
+            QMessageBox.information(self, "KeePassXC", "No entries found for this domain")
+            return
+        
+        # If multiple entries, show selection dialog
+        if len(entries) > 1:
+            entry = self._select_entry(entries)
+            if not entry:
+                return
+        else:
+            entry = entries[0]
+        
+        # Get full entry details
+        full_entry = keepass_manager.get_entry_details(entry.title, password)
+        if not full_entry or not full_entry.password:
+            QMessageBox.warning(self, "Error", "Could not retrieve password")
+            return
+        
+        # Fill password into focused field or find password field at click position
+        js_code = f"""
+        console.log('KeePassXC: Filling password for entry: {self._escape_js_string(entry.title)}');
+        console.log('KeePassXC: Bridge available?', typeof window.KeePassXCBridge !== 'undefined');
+        
+        if (typeof window.KeePassXCBridge === 'undefined') {{
+            console.log('KeePassXC: Bridge not available - filling directly');
+            
+            // Fallback: direct filling without bridge
+            var targetElement = document.activeElement;
+            if (!targetElement || targetElement.tagName !== 'INPUT') {{
+                targetElement = document.elementFromPoint({pos.x()}, {pos.y()});
+            }}
+            
+            if (targetElement && targetElement.tagName === 'INPUT') {{
+                targetElement.focus();
+                targetElement.value = '{self._escape_js_string(full_entry.password)}';
+                
+                // Trigger events manually
+                ['input', 'change', 'blur'].forEach(function(eventType) {{
+                    var event = new Event(eventType, {{ bubbles: true, cancelable: true }});
+                    targetElement.dispatchEvent(event);
+                }});
+                
+                console.log('KeePassXC: Password filled directly');
+                'Password filled (direct)';
+            }} else {{
+                console.log('KeePassXC: No input field found');
+                'No input field found';
+            }}
+        }} else {{
+            // Use bridge if available
+            var targetElement = document.activeElement;
+            console.log('KeePassXC: Active element:', targetElement);
+            
+            if (!targetElement || targetElement.tagName !== 'INPUT') {{
+                targetElement = document.elementFromPoint({pos.x()}, {pos.y()});
+                console.log('KeePassXC: Element at click position:', targetElement);
+            }}
+            
+            if (targetElement && targetElement.tagName === 'INPUT') {{
+                var result = KeePassXCBridge.fillField(targetElement, '{self._escape_js_string(full_entry.password)}');
+                console.log('KeePassXC: Password fill result:', result);
+                result ? 'Password filled (bridge)' : 'Password fill failed';
+            }} else {{
+                console.log('KeePassXC: No valid input field found');
+                'No input field found';
+            }}
+        }}
+        """
+        
+        self.page().runJavaScript(js_code, lambda result: print(f"[KeePassXC DEBUG] Password fill result: {result}"))
+    
+    def _fill_username(self, pos):
+        """Fill username into the currently focused field."""
+        password = self._get_master_password()
+        if not password:
+            return
+        
+        # Get entries for current domain
+        current_url = self.url().toString()
+        entries = keepass_manager.search_by_url(current_url, password)
+        
+        if not entries:
+            QMessageBox.information(self, "KeePassXC", "No entries found for this domain")
+            return
+        
+        # If multiple entries, show selection dialog
+        if len(entries) > 1:
+            entry = self._select_entry(entries)
+            if not entry:
+                return
+        else:
+            entry = entries[0]
+        
+        # Get full entry details
+        full_entry = keepass_manager.get_entry_details(entry.title, password)
+        if not full_entry or not full_entry.username:
+            QMessageBox.warning(self, "Error", "Could not retrieve username")
+            return
+        
+        # Fill username into focused field or find field at click position
+        js_code = f"""
+        console.log('KeePassXC: Filling username for entry: {self._escape_js_string(entry.title)}');
+        console.log('KeePassXC: Bridge available?', typeof window.KeePassXCBridge !== 'undefined');
+        
+        if (typeof window.KeePassXCBridge === 'undefined') {{
+            console.log('KeePassXC: Bridge not available - filling directly');
+            
+            // Fallback: direct filling without bridge
+            var targetElement = document.activeElement;
+            if (!targetElement || targetElement.tagName !== 'INPUT') {{
+                targetElement = document.elementFromPoint({pos.x()}, {pos.y()});
+            }}
+            
+            if (targetElement && targetElement.tagName === 'INPUT') {{
+                targetElement.focus();
+                targetElement.value = '{self._escape_js_string(full_entry.username)}';
+                
+                // Trigger events manually
+                ['input', 'change', 'blur'].forEach(function(eventType) {{
+                    var event = new Event(eventType, {{ bubbles: true, cancelable: true }});
+                    targetElement.dispatchEvent(event);
+                }});
+                
+                console.log('KeePassXC: Username filled directly');
+                'Username filled (direct)';
+            }} else {{
+                console.log('KeePassXC: No input field found');
+                'No input field found';
+            }}
+        }} else {{
+            // Use bridge if available
+            var targetElement = document.activeElement;
+            console.log('KeePassXC: Active element:', targetElement);
+            
+            if (!targetElement || targetElement.tagName !== 'INPUT') {{
+                targetElement = document.elementFromPoint({pos.x()}, {pos.y()});
+                console.log('KeePassXC: Element at click position:', targetElement);
+            }}
+            
+            if (targetElement && targetElement.tagName === 'INPUT') {{
+                var result = KeePassXCBridge.fillField(targetElement, '{self._escape_js_string(full_entry.username)}');
+                console.log('KeePassXC: Username fill result:', result);
+                result ? 'Username filled (bridge)' : 'Username fill failed';
+            }} else {{
+                console.log('KeePassXC: No valid input field found');
+                'No input field found';
+            }}
+        }}
+        """
+        
+        self.page().runJavaScript(js_code, lambda result: print(f"[KeePassXC DEBUG] Username fill result: {result}"))
+    
+    def _fill_generic_field(self, pos):
+        """Fill generic field - let user choose what to fill."""
+        password = self._get_master_password()
+        if not password:
+            return
+        
+        # Show dialog to choose what to fill
+        from PyQt6.QtWidgets import QDialog, QVBoxLayout, QRadioButton, QDialogButtonBox
+        
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Fill Field")
+        layout = QVBoxLayout(dialog)
+        
+        username_radio = QRadioButton("Username")
+        password_radio = QRadioButton("Password")
+        username_radio.setChecked(True)
+        
+        layout.addWidget(QLabel("What would you like to fill?"))
+        layout.addWidget(username_radio)
+        layout.addWidget(password_radio)
+        
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        layout.addWidget(buttons)
+        
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        
+        fill_username = username_radio.isChecked()
+        
+        if fill_username:
+            self._fill_username(pos)
+        else:
+            self._fill_password(pos)
+    
+    def _fill_login_form(self):
+        """Fill entire login form."""
+        password = self._get_master_password()
+        if not password:
+            return
+        
+        # Get entries for current domain
+        current_url = self.url().toString()
+        entries = keepass_manager.search_by_url(current_url, password)
+        
+        if not entries:
+            QMessageBox.information(self, "KeePassXC", "No entries found for this domain")
+            return
+        
+        # If multiple entries, show selection dialog
+        if len(entries) > 1:
+            entry = self._select_entry(entries)
+            if not entry:
+                return
+        else:
+            entry = entries[0]
+        
+        # Get full entry details
+        full_entry = keepass_manager.get_entry_details(entry.title, password)
+        if not full_entry:
+            QMessageBox.warning(self, "Error", "Could not retrieve entry details")
+            return
+        
+        # Fill the login form
+        username = self._escape_js_string(full_entry.username) if full_entry.username else ""
+        password_str = self._escape_js_string(full_entry.password) if full_entry.password else ""
+        
+        js_code = f"""
+        if (window.KeePassXCBridge) {{
+            var result = KeePassXCBridge.fillLoginForm('{username}', '{password_str}', false);
+            result;
+        }} else {{
+            'Bridge not available';
+        }}
+        """
+        
+        self.page().runJavaScript(js_code, self._fill_form_callback)
+    
+    def _fill_form_callback(self, result):
+        """Callback for form filling result."""
+        if isinstance(result, dict):
+            if result.get('success'):
+                message = "Login form filled successfully"
+                if result.get('errors'):
+                    message += f"\nWarnings: {', '.join(result['errors'])}"
+                QMessageBox.information(self, "KeePassXC", message)
+            else:
+                error_msg = "Failed to fill login form"
+                if result.get('errors'):
+                    error_msg += f"\nErrors: {', '.join(result['errors'])}"
+                QMessageBox.warning(self, "Error", error_msg)
+        else:
+            print(f"Form fill result: {result}")
+    
+    def _search_entries(self):
+        """Show dialog to search and select entries."""
+        password = self._get_master_password()
+        if not password:
+            return
+        
+        # Show entry selection dialog with all entries
+        try:
+            all_entries = keepass_manager.get_all_entries(password)
+            if not all_entries:
+                QMessageBox.information(self, "KeePassXC", "No entries found in database")
+                return
+            
+            # Create entries list for selection
+            entries = [keepass_manager.get_entry_details(title, password) for title in all_entries[:20]]  # Limit to first 20
+            entries = [e for e in entries if e]  # Filter out None entries
+            
+            selected_entry = self._select_entry(entries)
+            if selected_entry:
+                # Fill form with selected entry
+                self._fill_selected_entry(selected_entry)
+        
+        except KeePassXCError as e:
+            QMessageBox.warning(self, "KeePassXC Error", str(e))
+    
+    def _fill_selected_entry(self, entry):
+        """Fill form with a selected entry."""
+        username = self._escape_js_string(entry.username) if entry.username else ""
+        password_str = self._escape_js_string(entry.password) if entry.password else ""
+        
+        js_code = f"""
+        if (window.KeePassXCBridge) {{
+            KeePassXCBridge.fillLoginForm('{username}', '{password_str}', false);
+        }}
+        """
+        
+        self.page().runJavaScript(js_code)
+    
+    def _select_entry(self, entries):
+        """Show dialog to select from multiple entries."""
+        from PyQt6.QtWidgets import QDialog, QVBoxLayout, QListWidget, QDialogButtonBox, QListWidgetItem
+        
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Select KeePassXC Entry")
+        dialog.resize(400, 300)
+        
+        layout = QVBoxLayout(dialog)
+        layout.addWidget(QLabel("Select an entry:"))
+        
+        entry_list = QListWidget()
+        for entry in entries:
+            item_text = f"{entry.title}"
+            if entry.username:
+                item_text += f" ({entry.username})"
+            if entry.url:
+                item_text += f" - {entry.url[:50]}..."
+            
+            item = QListWidgetItem(item_text)
+            item.setData(256, entry)  # Store entry object
+            entry_list.addItem(item)
+        
+        if entry_list.count() > 0:
+            entry_list.setCurrentRow(0)
+        
+        layout.addWidget(entry_list)
+        
+        # Connect double-click
+        entry_list.itemDoubleClicked.connect(dialog.accept)
+        
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        layout.addWidget(buttons)
+        
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            current_item = entry_list.currentItem()
+            if current_item:
+                return current_item.data(256)
+        
+        return None
+    
+    def _escape_js_string(self, value):
+        """Escape string for safe JavaScript injection."""
+        if not value:
+            return ""
+        return value.replace("'", "\\'").replace('"', '\\"').replace('\n', '\\n').replace('\r', '\\r')
+
+class SplashScreen(QSplashScreen):
+    """Custom splash screen with Creature branding."""
+    
+    def __init__(self):
+        # Load splash image
+        splash_path = Path(__file__).parent / "splash.png"
+        if splash_path.exists():
+            pixmap = QPixmap(str(splash_path))
+            # Scale to reasonable size if too large
+            if pixmap.width() > 800 or pixmap.height() > 600:
+                pixmap = pixmap.scaled(800, 600, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+        else:
+            # Create a simple colored splash if image not found
+            pixmap = QPixmap(500, 350)
+            pixmap.fill(QColor(45, 55, 65))
+        
+        super().__init__(pixmap)
+        
+        # Set window flags to ensure visibility and floating behavior
+        self.setWindowFlags(Qt.WindowType.SplashScreen | 
+                           Qt.WindowType.FramelessWindowHint | 
+                           Qt.WindowType.WindowStaysOnTopHint |
+                           Qt.WindowType.Tool)
+        
+        # Set window class for Wayland/Hyprland recognition
+        self.setProperty("_q_wayland_window_type", "splash")
+        
+        # Set window class name for window managers
+        if hasattr(self, 'setWindowClassName'):
+            self.setWindowClassName("creature-splash")
+        
+        # Center the splash screen on the screen
+        from PyQt6.QtGui import QGuiApplication
+        screen = QGuiApplication.primaryScreen().geometry()
+        size = self.geometry()
+        self.move((screen.width() - size.width()) // 2, (screen.height() - size.height()) // 2)
+        
+        # Show loading message with better styling
+        self.showMessage(f"Starting Creature Browser v{CREATURE_VERSION}...", 
+                        Qt.AlignmentFlag.AlignBottom | Qt.AlignmentFlag.AlignCenter, 
+                        QColor(255, 255, 255))
+        
+        # Set up timer for loading messages
+        self.timer = QTimer()
+        self.timer.timeout.connect(self.update_message)
+        self.message_index = 0
+        self.messages = [
+            f"Starting Creature Browser v{CREATURE_VERSION}...",
+            "Loading configuration...",
+            "Initializing browser engine...",
+            "Setting up profiles...",
+            "Applying theme...",
+            "Ready!"
+        ]
+        self.timer.start(300)  # Update every 300ms
+        
+        # Additional Wayland/Hyprland compatibility
+        self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating, True)
+    
+    def update_message(self):
+        """Update the loading message."""
+        if self.message_index < len(self.messages):
+            self.showMessage(self.messages[self.message_index], 
+                            Qt.AlignmentFlag.AlignBottom | Qt.AlignmentFlag.AlignCenter, 
+                            QColor(255, 255, 255))
+            self.message_index += 1
+        else:
+            self.timer.stop()
+
+class AboutDialog(QDialog):
+    """About dialog showing version, author, and license information."""
+    
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("About Creature Browser")
+        self.setFixedSize(500, 400)
+        self.setModal(True)
+        
+        layout = QVBoxLayout(self)
+        
+        # Logo
+        logo_path = Path(__file__).parent / "logo.png"
+        if logo_path.exists():
+            logo_label = QLabel()
+            pixmap = QPixmap(str(logo_path))
+            # Scale logo to reasonable size
+            if pixmap.width() > 128 or pixmap.height() > 128:
+                pixmap = pixmap.scaled(128, 128, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+            logo_label.setPixmap(pixmap)
+            logo_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            layout.addWidget(logo_label)
+        
+        # Title
+        title_label = QLabel("Creature Browser")
+        title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        title_label.setStyleSheet("font-size: 24px; font-weight: bold; margin: 10px;")
+        layout.addWidget(title_label)
+        
+        # Version
+        version_label = QLabel(f"Version {CREATURE_VERSION}")
+        version_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        version_label.setStyleSheet("font-size: 14px; margin: 5px;")
+        layout.addWidget(version_label)
+        
+        # Description
+        desc_label = QLabel("A privacy-focused web browser with profile isolation,\ncustom themes, and KeePassXC integration.")
+        desc_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        desc_label.setStyleSheet("margin: 10px;")
+        layout.addWidget(desc_label)
+        
+        # Author
+        author_label = QLabel(f"Developed by: {CREATURE_AUTHOR}")
+        author_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        author_label.setStyleSheet("margin: 5px;")
+        layout.addWidget(author_label)
+        
+        # License
+        license_label = QLabel(f"License: {CREATURE_LICENSE}")
+        license_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        license_label.setStyleSheet("margin: 5px;")
+        layout.addWidget(license_label)
+        
+        # Close button
+        close_button = QPushButton("Close")
+        close_button.clicked.connect(self.accept)
+        close_button.setDefault(True)
+        layout.addWidget(close_button)
+        layout.setAlignment(close_button, Qt.AlignmentFlag.AlignCenter)
+
+class HelpDialog(QDialog):
+    """Help dialog displaying documentation from markdown files."""
+    
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Creature Browser Help")
+        self.resize(800, 600)
+        self.setModal(True)
+        
+        layout = QVBoxLayout(self)
+        
+        # Create text browser for displaying help content
+        self.text_browser = QTextBrowser()
+        self.text_browser.setOpenExternalLinks(True)
+        layout.addWidget(self.text_browser)
+        
+        # Close button
+        close_button = QPushButton("Close")
+        close_button.clicked.connect(self.accept)
+        layout.addWidget(close_button)
+        
+        # Load help content
+        self._load_help_content()
+    
+    def _load_help_content(self):
+        """Load help content from markdown files."""
+        docs_dir = Path(__file__).parent / "docs"
+        
+        help_content = f"""
+        <h1>Creature Browser Help</h1>
+        <p><strong>Version:</strong> {CREATURE_VERSION}</p>
+        <p><strong>Author:</strong> {CREATURE_AUTHOR}</p>
+        <hr>
+        
+        <h2>Quick Start</h2>
+        <p>Creature Browser is a privacy-focused web browser with advanced features:</p>
+        <ul>
+            <li><strong>Profile Isolation:</strong> Complete separation between different browsing contexts</li>
+            <li><strong>Custom Themes:</strong> 8 built-in themes with custom theme support</li>
+            <li><strong>KeePassXC Integration:</strong> Secure password manager integration</li>
+            <li><strong>Smart URL Bar:</strong> Intelligent URL/search detection</li>
+            <li><strong>Wayland Support:</strong> Optimized for modern Linux desktops</li>
+        </ul>
+        
+        <h2>Keyboard Shortcuts</h2>
+        <table border="1" cellpadding="5">
+            <tr><th>Shortcut</th><th>Action</th></tr>
+            <tr><td>Ctrl+G</td><td>Focus URL bar</td></tr>
+            <tr><td>Ctrl+N</td><td>New window</td></tr>
+            <tr><td>Ctrl+T</td><td>New tab</td></tr>
+            <tr><td>Ctrl+W</td><td>Close tab</td></tr>
+            <tr><td>Ctrl+Shift+Left/Right</td><td>Switch tabs</td></tr>
+            <tr><td>F5</td><td>Refresh page</td></tr>
+            <tr><td>Alt+Left/Right</td><td>Back/Forward</td></tr>
+        </table>
+        
+        <h2>Configuration</h2>
+        <p>Configuration files are located at:</p>
+        <ul>
+            <li><code>~/.config/creature/config.ini</code> - Main configuration</li>
+            <li><code>~/.config/creature/profile_&lt;name&gt;/</code> - Profile data</li>
+        </ul>
+        
+        <h2>Available Documentation</h2>
+        <p>For detailed information, see the documentation files:</p>
+        <ul>
+        """
+        
+        # Add links to available documentation files
+        if docs_dir.exists():
+            for doc_file in sorted(docs_dir.glob("*.md")):
+                doc_name = doc_file.stem.replace('-', ' ').title()
+                help_content += f'<li>{doc_name} - <code>{doc_file.name}</code></li>\n'
+        
+        help_content += """
+        </ul>
+        
+        <h2>Support</h2>
+        <p>For issues and support:</p>
+        <ul>
+            <li>Check the documentation files in the <code>docs/</code> directory</li>
+            <li>Review configuration options in <code>config.ini</code></li>
+            <li>Ensure all dependencies are properly installed</li>
+        </ul>
+        
+        <h2>License</h2>
+        <p>Creature Browser is released under the <strong>MIT License</strong>.</p>
+        """
+        
+        self.text_browser.setHtml(help_content)
 
 class ProfileSelectionDialog(QDialog):
     """Dialog for selecting a browser profile."""
@@ -388,8 +1118,8 @@ class BrowserTab(QWidget):
 
         layout.addLayout(nav_layout)
 
-        # Web view with custom profile - FIXED API USAGE
-        self.web_view = QWebEngineView()
+        # Web view with custom profile and KeePassXC support
+        self.web_view = KeePassXCWebEngineView()
 
         # Create a new page with the profile
         from PyQt6.QtWebEngineCore import QWebEnginePage
@@ -477,6 +1207,12 @@ class CreatureBrowser(QMainWindow):
             self.setWindowTitle(f"Creature Browser - {profile_name} ({title_suffix})")
         else:
             self.setWindowTitle(f"Creature Browser - {profile_name}")
+        
+        # Set application icon
+        logo_path = Path(__file__).parent / "logo.png"
+        if logo_path.exists():
+            self.setWindowIcon(QIcon(str(logo_path)))
+        
         self.setGeometry(
             creature_config.window.x, 
             creature_config.window.y, 
@@ -493,13 +1229,6 @@ class CreatureBrowser(QMainWindow):
             self.tabs.setTabsClosable(True)
             self.tabs.tabCloseRequested.connect(self.close_tab)
             self.setCentralWidget(self.tabs)
-
-            # Toolbar
-            toolbar = QToolBar()
-            new_tab_action = QAction("+ New Tab", self)
-            new_tab_action.triggered.connect(self.add_new_tab)
-            toolbar.addAction(new_tab_action)
-            self.addToolBar(toolbar)
 
             # Add first tab
             self.add_new_tab()
@@ -522,10 +1251,13 @@ class CreatureBrowser(QMainWindow):
 
         if not self.force_new_window:
             new_tab_action = QAction('New Tab', self)
+            new_tab_action.setShortcut('Ctrl+T')
             new_tab_action.triggered.connect(self.add_new_tab)
             file_menu.addAction(new_tab_action)
+            file_menu.addSeparator()
 
         new_window_action = QAction('New Window', self)
+        new_window_action.setShortcut('Ctrl+N')
         new_window_action.triggered.connect(self.new_window)
         file_menu.addAction(new_window_action)
 
@@ -539,8 +1271,24 @@ class CreatureBrowser(QMainWindow):
         theme_menu = menubar.addMenu('Theme')
         for theme_name in self.theme_manager.themes.keys():
             theme_action = QAction(theme_name.capitalize(), self)
+            theme_action.setCheckable(True)
+            theme_action.setChecked(theme_name == self.current_theme)
             theme_action.triggered.connect(lambda checked, t=theme_name: self.change_theme(t))
             theme_menu.addAction(theme_action)
+        
+        # Help menu
+        help_menu = menubar.addMenu('Help')
+        
+        help_action = QAction('Help...', self)
+        help_action.setShortcut('F1')
+        help_action.triggered.connect(self.show_help)
+        help_menu.addAction(help_action)
+        
+        help_menu.addSeparator()
+        
+        about_action = QAction('About Creature Browser', self)
+        about_action.triggered.connect(self.show_about)
+        help_menu.addAction(about_action)
 
     def add_new_tab(self, url=None):
         if url is None or isinstance(url, bool):
@@ -603,6 +1351,22 @@ class CreatureBrowser(QMainWindow):
     def change_theme(self, theme_name):
         app = QApplication.instance()
         self.theme_manager.apply_theme(app, theme_name)
+        self.current_theme = theme_name
+        
+        # Update theme menu checkmarks
+        theme_menu = self.menuBar().actions()[2]  # Theme is the 3rd menu
+        for action in theme_menu.menu().actions():
+            action.setChecked(action.text().lower() == theme_name)
+    
+    def show_help(self):
+        """Show help dialog."""
+        help_dialog = HelpDialog(self)
+        help_dialog.exec()
+    
+    def show_about(self):
+        """Show about dialog."""
+        about_dialog = AboutDialog(self)
+        about_dialog.exec()
     
     def setup_tab_shortcuts(self):
         """Set up keyboard shortcuts for tab cycling and window management."""
@@ -727,6 +1491,25 @@ def main():
 
     app = QApplication(sys.argv)
     
+    # Set application icon
+    logo_path = Path(__file__).parent / "logo.png"
+    if logo_path.exists():
+        app.setWindowIcon(QIcon(str(logo_path)))
+    
+    # Show splash screen if enabled
+    splash = None
+    if creature_config.general.show_splash_screen:
+        splash = SplashScreen()
+        splash.show()
+        app.processEvents()  # Process events to show splash screen
+        
+        # Ensure splash screen shows for minimum 2 seconds
+        import time
+        start_time = time.time()
+        while time.time() - start_time < 2.0:
+            app.processEvents()
+            time.sleep(0.05)  # Small sleep to prevent high CPU usage
+    
     # Determine profile to use
     profile_name = args.profile
     
@@ -760,6 +1543,10 @@ def main():
     theme_manager.apply_theme(app, browser.current_theme)
 
     browser.show()
+    
+    # Close splash screen after browser is shown
+    if splash:
+        splash.finish(browser)
 
     # Load initial URL
     initial_url = args.url or creature_config.general.home_page

@@ -10,6 +10,9 @@ home_page = string(default='https://www.google.com')
 # Force new windows instead of tabs
 force_new_window = boolean(default=False)
 
+# Show splash screen on startup
+show_splash_screen = boolean(default=True)
+
 # Default profile to use
 default_profile = string(default='default')
 
@@ -94,6 +97,25 @@ font_weight = string(default='normal')
 
 # Font style (normal, italic, oblique)
 font_style = option('normal', 'italic', 'oblique', default='normal')
+
+[keepassxc]
+# Enable KeePassXC integration
+enabled = boolean(default=False)
+
+# Path to KeePassXC database file
+database_path = string(default='')
+
+# Path to key file (optional)
+key_file = string(default='')
+
+# Auto-search entries by current page URL
+auto_search = boolean(default=True)
+
+# Show KeePassXC options in context menu
+show_context_menu = boolean(default=True)
+
+# Clipboard timeout in seconds when copying credentials
+clip_timeout = integer(min=0, max=300, default=10)
 
 # Profile sections are defined dynamically in the config file
 # Each profile can have these settings:
