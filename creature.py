@@ -156,8 +156,8 @@ class ThemeManager:
         # Set application style
         app.setStyle(QStyleFactory.create("Fusion"))
 
-        # Apply UI scaling and font adjustments
-        self.apply_ui_scaling(app)
+        # Apply UI scaling and font adjustments (pass theme for border radius styling)
+        self.apply_ui_scaling(app, theme)
 
         # Create palette
         palette = QPalette()
@@ -177,13 +177,141 @@ class ThemeManager:
 
         app.setPalette(palette)
     
+    def get_border_radius_stylesheet(self, theme):
+        """Generate border radius stylesheet for UI elements."""
+        if 'ui_elements' not in theme:
+            return ""
+        
+        ui_elements = theme['ui_elements']
+        colors = theme['colors']
+        
+        # Build comprehensive stylesheet with border radius
+        return f"""
+            /* Button styling with border radius */
+            QPushButton {{
+                border-radius: {ui_elements.get('button_radius', 4)}px;
+                padding: 6px 12px;
+                border: 1px solid {colors.get('border_color', '#ccc')};
+                background-color: {colors.get('button_bg', '#f0f0f0')};
+                color: {colors.get('text_color', '#000')};
+            }}
+            
+            QPushButton:hover {{
+                background-color: {colors.get('tab_hover_bg', colors.get('button_bg', '#f0f0f0'))};
+                border-color: {colors.get('accent', '#0078d4')};
+            }}
+            
+            QPushButton:pressed {{
+                background-color: {colors.get('accent', '#0078d4')};
+                color: white;
+            }}
+            
+            /* Input field styling with border radius */
+            QLineEdit {{
+                border-radius: {ui_elements.get('input_radius', 4)}px;
+                padding: 8px 12px;
+                border: 2px solid {colors.get('border_color', '#ccc')};
+                background-color: {colors.get('url_bar_bg', '#fff')};
+                color: {colors.get('text_color', '#000')};
+                selection-background-color: {colors.get('accent', '#0078d4')};
+            }}
+            
+            QLineEdit:focus {{
+                border-color: {colors.get('accent', '#0078d4')};
+            }}
+            
+            /* Tab styling with border radius */
+            QTabWidget::pane {{
+                border-radius: {ui_elements.get('tab_radius', 6)}px;
+                border: 1px solid {colors.get('border_color', '#ccc')};
+                background-color: {colors.get('window_bg', '#fff')};
+            }}
+            
+            QTabBar::tab {{
+                border-radius: {ui_elements.get('tab_radius', 6)}px;
+                padding: 8px 16px;
+                margin: 2px;
+                background-color: {colors.get('tab_bg', '#f5f5f5')};
+                color: {colors.get('text_color', '#000')};
+                border: 1px solid {colors.get('border_color', '#ccc')};
+            }}
+            
+            QTabBar::tab:selected {{
+                background-color: {colors.get('tab_active_bg', '#fff')};
+                border-color: {colors.get('accent', '#0078d4')};
+            }}
+            
+            QTabBar::tab:hover {{
+                background-color: {colors.get('tab_hover_bg', '#e8e8e8')};
+            }}
+            
+            /* Menu styling with border radius */
+            QMenu {{
+                border-radius: {ui_elements.get('menu_radius', 4)}px;
+                padding: 4px;
+                border: 1px solid {colors.get('border_color', '#ccc')};
+                background-color: {colors.get('window_bg', '#fff')};
+                color: {colors.get('text_color', '#000')};
+            }}
+            
+            QMenu::item {{
+                border-radius: {max(0, ui_elements.get('menu_radius', 4) - 2)}px;
+                padding: 8px 16px;
+                margin: 1px;
+            }}
+            
+            QMenu::item:selected {{
+                background-color: {colors.get('accent', '#0078d4')};
+                color: white;
+            }}
+            
+            /* Dialog styling with border radius */
+            QDialog {{
+                border-radius: {ui_elements.get('dialog_radius', 8)}px;
+                background-color: {colors.get('window_bg', '#fff')};
+            }}
+            
+            /* Toolbar styling */
+            QToolBar {{
+                border-radius: {ui_elements.get('toolbar_radius', 0)}px;
+                background-color: {colors.get('toolbar_bg', colors.get('window_bg', '#fff'))};
+                border: 1px solid {colors.get('border_color', '#ccc')};
+                spacing: 2px;
+                padding: 4px;
+            }}
+            
+            /* Message boxes and other dialogs */
+            QMessageBox {{
+                background-color: {colors.get('window_bg', '#fff')};
+            }}
+            
+            /* List widgets */
+            QListWidget {{
+                border-radius: {ui_elements.get('input_radius', 4)}px;
+                border: 1px solid {colors.get('border_color', '#ccc')};
+                background-color: {colors.get('url_bar_bg', '#fff')};
+                color: {colors.get('text_color', '#000')};
+            }}
+            
+            QListWidget::item {{
+                border-radius: {max(0, ui_elements.get('input_radius', 4) - 2)}px;
+                padding: 6px;
+                margin: 1px;
+            }}
+            
+            QListWidget::item:selected {{
+                background-color: {colors.get('accent', '#0078d4')};
+                color: white;
+            }}
+        """
+    
     def get_theme_color(self, theme_name, color_key):
         """Get a specific color from a theme."""
         if theme_name in self.themes:
             return self.themes[theme_name]['colors'].get(color_key, "")
         return ""
     
-    def apply_ui_scaling(self, app):
+    def apply_ui_scaling(self, app, theme=None):
         """Apply UI scaling, font selection, and font size adjustments."""
         ui_config = creature_config.ui
         
@@ -202,14 +330,14 @@ class ThemeManager:
         # Clear any existing stylesheet first to prevent accumulation
         app.setStyleSheet("")
         
-        # Apply scale factor via stylesheet for better control
+        # Build base stylesheet with scaling
+        base_stylesheet = ""
         if ui_config.scale_factor != 1.0:
             scale_factor = ui_config.scale_factor
             # Calculate scaled font size from the final font size (not hardcoded 12)
             scaled_font_size = int(final_font_size * scale_factor)
             
-            # Apply scaling through style sheet
-            app.setStyleSheet(f"""
+            base_stylesheet = f"""
                 QWidget {{
                     font-size: {scaled_font_size}px;
                 }}
@@ -237,7 +365,15 @@ class ThemeManager:
                     spacing: {int(4 * scale_factor)}px;
                     padding: {int(2 * scale_factor)}px;
                 }}
-            """)
+            """
+        
+        # Combine with border radius styling if theme is provided
+        if theme and 'ui_elements' in theme:
+            border_radius_stylesheet = self.get_border_radius_stylesheet(theme)
+            combined_stylesheet = base_stylesheet + "\n" + border_radius_stylesheet
+            app.setStyleSheet(combined_stylesheet)
+        else:
+            app.setStyleSheet(base_stylesheet)
     
     def get_configured_font(self, app):
         """Get font based on configuration settings."""

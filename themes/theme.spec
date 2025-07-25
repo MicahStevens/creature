@@ -31,3 +31,12 @@ info = string(default="#2196f3")
 # Window styling options
 border_radius = integer(min=0, max=20, default=0)
 opacity = float(min=0.5, max=1.0, default=1.0)
+
+[ui_elements]
+# Border radius settings for UI elements (in pixels)
+button_radius = integer(min=0, max=20, default=4)
+input_radius = integer(min=0, max=20, default=4)
+tab_radius = integer(min=0, max=20, default=6)
+menu_radius = integer(min=0, max=20, default=4)
+dialog_radius = integer(min=0, max=20, default=8)
+toolbar_radius = integer(min=0, max=20, default=0)
