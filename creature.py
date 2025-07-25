@@ -487,6 +487,9 @@ class KeePassXCWebEngineView(QWebEngineView):
         from PyQt6.QtWidgets import QMenu
         menu = QMenu(self)
         
+        # Store the global position immediately to ensure accuracy
+        global_pos = event.globalPos()
+        
         # Get information about the clicked element
         pos = event.pos()
         js_code = f"""
@@ -529,10 +532,10 @@ class KeePassXCWebEngineView(QWebEngineView):
         
         menu.addSeparator()
         
-        # Execute JavaScript to get element info
-        self.page().runJavaScript(js_code, lambda result: self._show_context_menu(menu, event, result))
+        # Execute JavaScript to get element info, passing stored global position
+        self.page().runJavaScript(js_code, lambda result: self._show_context_menu(menu, event, result, global_pos))
     
-    def _show_context_menu(self, menu, event, element_info):
+    def _show_context_menu(self, menu, event, element_info, global_pos):
         """Show context menu with KeePassXC options if applicable."""
         # Add KeePassXC options only if enabled and configured
         if keepass_manager.enabled and keepass_manager.config.show_context_menu:
@@ -564,8 +567,8 @@ class KeePassXCWebEngineView(QWebEngineView):
                 search_action.triggered.connect(self._search_entries)
                 menu.addAction(search_action)
         
-        # Show the menu
-        menu.popup(event.globalPos())
+        # Show the menu at the stored global position
+        menu.popup(global_pos)
     
     def _get_master_password(self):
         """Get master password from user if not cached."""
