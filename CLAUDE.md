@@ -81,7 +81,7 @@ This document contains critical information about working with this codebase. Fo
 - `keepassxc_manager.py`: keepassxc integration code. 
 - `logo.png`: project logo/icon
 
-## Pull Requests
+## git commits and pull requests
 
 - Create a detailed message of what changed. Focus on the high level description of
   the problem it tries to solve, and how it is solved. Don't go into the specifics of the
@@ -89,6 +89,13 @@ This document contains critical information about working with this codebase. Fo
 
 - NEVER ever mention a `co-authored-by` or similar aspects. In particular, never
   mention the tool used to create the commit message or PR.
+
+- Don't unecessarily summarize at the end of the commit message. The message is already a 
+  summary of what has changed. 
+
+- don't summarize the results of the change, only address what has changed, and why.
+
+- don't add a 'user benefits' section to the message. 
 
 ## Python Tools
 

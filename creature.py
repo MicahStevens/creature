@@ -21,8 +21,8 @@ from validate import Validator
 from keepassxc_manager import keepass_manager, KeePassXCError
 
 # Application constants
-CREATURE_VERSION = "1.0.0"
-CREATURE_AUTHOR = "micah@benchtop.tech + Claude Code"
+CREATURE_VERSION = "0.1.0"
+CREATURE_AUTHOR = "micah@benchtop.tech"
 CREATURE_LICENSE = "MIT"
 
 def process_url_or_search(input_text):
@@ -1293,16 +1293,12 @@ class BrowserTab(QWidget):
         self.back_btn = QPushButton("←")
         self.forward_btn = QPushButton("→")
         self.refresh_btn = QPushButton("⟳")
-        self.home_btn = QPushButton("🏠")
         self.url_bar = QLineEdit()
-        self.go_btn = QPushButton("Go")
 
         nav_layout.addWidget(self.back_btn)
         nav_layout.addWidget(self.forward_btn)
         nav_layout.addWidget(self.refresh_btn)
-        nav_layout.addWidget(self.home_btn)
         nav_layout.addWidget(self.url_bar)
-        nav_layout.addWidget(self.go_btn)
 
         layout.addLayout(nav_layout)
 
@@ -1320,8 +1316,6 @@ class BrowserTab(QWidget):
         self.back_btn.clicked.connect(self.web_view.back)
         self.forward_btn.clicked.connect(self.web_view.forward)
         self.refresh_btn.clicked.connect(self.web_view.reload)
-        self.home_btn.clicked.connect(self.navigate_home)
-        self.go_btn.clicked.connect(self.navigate)
         self.url_bar.returnPressed.connect(self.navigate)
         self.web_view.urlChanged.connect(lambda url: self.url_bar.setText(url.toString()))
 
@@ -1353,6 +1347,10 @@ class BrowserTab(QWidget):
         # Ctrl+G to focus URL bar
         focus_url_shortcut = QShortcut(QKeySequence("Ctrl+G"), self)
         focus_url_shortcut.activated.connect(self.focus_url_bar)
+        
+        # Alt+Home to navigate to home page
+        home_shortcut = QShortcut(QKeySequence("Alt+Home"), self)
+        home_shortcut.activated.connect(self.navigate_home)
     
     def focus_url_bar(self):
         """Focus the URL bar and select all text."""
@@ -1397,7 +1395,7 @@ class CreatureBrowser(QMainWindow):
             self.setWindowTitle(f"Creature Browser - {self.profile_name}")
         
         # Set application icon
-        logo_path = Path(__file__).parent / "logo.png"
+        logo_path = Path(__file__).parent / "icon.png"
         if logo_path.exists():
             self.setWindowIcon(QIcon(str(logo_path)))
         
@@ -1418,8 +1416,7 @@ class CreatureBrowser(QMainWindow):
             self.tabs.tabCloseRequested.connect(self.close_tab)
             self.setCentralWidget(self.tabs)
 
-            # Add first tab
-            self.add_new_tab()
+            # Initial tab will be added by main() with proper URL
             
             # Set up tab cycling shortcuts
             self.setup_tab_shortcuts()
@@ -1434,19 +1431,87 @@ class CreatureBrowser(QMainWindow):
     def setup_hamburger_menu(self):
         """Set up hamburger menu button in tab bar (replaces traditional menu bar)."""
         from PyQt6.QtWidgets import QPushButton
+        from PyQt6.QtGui import QIcon, QPixmap
+        from PyQt6.QtCore import Qt, QSize
+        from pathlib import Path
         
         # Create hamburger menu button
-        self.hamburger_button = QPushButton('☰', self)
-        self.hamburger_button.setFixedSize(30, 24)
+        self.hamburger_button = QPushButton(self)
+        
+        # Load logo.png as the button icon
+        logo_path = Path(__file__).parent / 'icon.png'
+        if logo_path.exists():
+            icon = QIcon(str(logo_path))
+            self.hamburger_button.setIcon(icon)
+            # Let Qt handle scaling by setting the desired icon size
+            self.hamburger_button.setIconSize(QSize(36, 28))
+        else:
+            # Fallback to text if logo not found
+            self.hamburger_button.setText('☰')
+            
+        self.hamburger_button.setFixedSize(40, 32)
         self.hamburger_button.setToolTip('Menu')
         self.hamburger_button.clicked.connect(self.show_hamburger_menu)
         
+        # Remove border and background styling with minimal padding
+        self.hamburger_button.setStyleSheet("""
+            QPushButton {
+                border: none;
+                background-color: transparent;
+                padding: 0px;
+                margin: 0px;
+            }
+            QPushButton:hover {
+                background-color: rgba(255, 255, 255, 0.1);
+                border-radius: 3px;
+            }
+            QPushButton:pressed {
+                background-color: rgba(255, 255, 255, 0.2);
+            }
+        """)
+        
+        # Create close window button
+        self.close_button = QPushButton('✕', self)
+        self.close_button.setFixedSize(32, 32)
+        self.close_button.setToolTip('Close Window')
+        self.close_button.clicked.connect(self.close)
+        
+        # Style the close button similar to hamburger button
+        self.close_button.setStyleSheet("""
+            QPushButton {
+                border: none;
+                background-color: transparent;
+                padding: 2px;
+                font-size: 16px;
+                font-weight: bold;
+                color: #999;
+            }
+            QPushButton:hover {
+                background-color: rgba(255, 0, 0, 0.2);
+                border-radius: 3px;
+                color: #fff;
+            }
+            QPushButton:pressed {
+                background-color: rgba(255, 0, 0, 0.3);
+            }
+        """)
+        
         if not self.force_new_window and hasattr(self, 'tabs'):
-            # Add hamburger button to tab bar corner (right side)
+            # Create a container widget for both buttons
+            from PyQt6.QtWidgets import QWidget, QHBoxLayout
             from PyQt6.QtCore import Qt
-            self.tabs.setCornerWidget(self.hamburger_button, Qt.Corner.TopRightCorner)
+            
+            button_container = QWidget()
+            layout = QHBoxLayout(button_container)
+            layout.setContentsMargins(0, 0, 0, 0)
+            layout.setSpacing(0)
+            layout.addWidget(self.hamburger_button)
+            layout.addWidget(self.close_button)
+            
+            # Add button container to tab bar corner (right side)
+            self.tabs.setCornerWidget(button_container, Qt.Corner.TopRightCorner)
         else:
-            # For single tab mode, create a minimal toolbar with just the hamburger button
+            # For single tab mode, create a minimal toolbar with hamburger and close buttons
             from PyQt6.QtWidgets import QToolBar, QWidget
             from PyQt6.QtCore import Qt
             
@@ -1454,11 +1519,12 @@ class CreatureBrowser(QMainWindow):
             toolbar.setMovable(False)
             toolbar.setFloatable(False)
             
-            # Add spacer to push hamburger button to the right
+            # Add spacer to push buttons to the right
             spacer = QWidget()
             spacer.setSizePolicy(spacer.sizePolicy().Expanding, spacer.sizePolicy().Expanding)
             toolbar.addWidget(spacer)
             toolbar.addWidget(self.hamburger_button)
+            toolbar.addWidget(self.close_button)
             
             # Add toolbar to top
             self.addToolBar(Qt.ToolBarArea.TopToolBarArea, toolbar)
