@@ -1,0 +1,11 @@
+[project]
+name = "creature"
+version = "0.1.0"
+description = "Creature - A PyQt6-based web browser with profile support"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "pyqt6>=6.9.1",
+    "pyqt6-webengine>=6.9.0",
+    "configobj>=5.0.8",
+]
