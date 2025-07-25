@@ -1059,12 +1059,61 @@ class AboutDialog(QDialog):
         license_label.setStyleSheet("margin: 5px;")
         layout.addWidget(license_label)
         
+        # Configuration file info
+        config_info_label = QLabel("Configuration:")
+        config_info_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        config_info_label.setStyleSheet("margin-top: 15px; margin-bottom: 5px; font-weight: bold;")
+        layout.addWidget(config_info_label)
+        
+        # Configuration file path (clickable)
+        self.config_path_label = QLabel()
+        self.setup_config_path_display()
+        self.config_path_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.config_path_label.setStyleSheet("margin: 5px; color: #0078d4; text-decoration: underline; cursor: pointer;")
+        self.config_path_label.setWordWrap(True)
+        self.config_path_label.mousePressEvent = self.open_config_folder
+        layout.addWidget(self.config_path_label)
+        
         # Close button
         close_button = QPushButton("Close")
         close_button.clicked.connect(self.accept)
         close_button.setDefault(True)
         layout.addWidget(close_button)
         layout.setAlignment(close_button, Qt.AlignmentFlag.AlignCenter)
+    
+    def setup_config_path_display(self):
+        """Set up the configuration file path display."""
+        config_path = creature_config.config_file_path
+        # Show just the filename and parent directory for readability
+        display_path = f"{config_path.parent.name}/{config_path.name}"
+        self.config_path_label.setText(f"{display_path}\n(Click to open folder)")
+        self.config_path = config_path
+    
+    def open_config_folder(self, event):
+        """Open the configuration file folder in system file manager."""
+        import subprocess
+        import sys
+        
+        try:
+            config_folder = self.config_path.parent
+            
+            if sys.platform == "win32":
+                # Windows
+                subprocess.run(["explorer", str(config_folder)], check=True)
+            elif sys.platform == "darwin":
+                # macOS
+                subprocess.run(["open", str(config_folder)], check=True)
+            else:
+                # Linux and other Unix-like systems
+                subprocess.run(["xdg-open", str(config_folder)], check=True)
+                
+        except Exception as e:
+            # Fallback: show message box with path
+            QMessageBox.information(
+                self, 
+                "Configuration Path", 
+                f"Configuration file location:\n{self.config_path}\n\nUnable to open folder: {e}"
+            )
 
 class HelpDialog(QDialog):
     """Help dialog displaying documentation from markdown files."""

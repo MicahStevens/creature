@@ -135,6 +135,7 @@ class CreatureConfig:
     def __init__(self) -> None:
         """Initialize configuration by loading from config file."""
         configfile = self._get_config_path()
+        self._config_file_path = configfile  # Store path for access
 
         # Load config with validation against spec
         spec_path = Path(__file__).parent / 'config.spec'
@@ -240,6 +241,15 @@ class CreatureConfig:
     def reload(self) -> None:
         """Reload configuration from file."""
         self.__init__()
+    
+    @property
+    def config_file_path(self) -> Path:
+        """Get the path to the currently loaded configuration file.
+        
+        Returns:
+            Path: Path object to the configuration file
+        """
+        return self._config_file_path
 
 
 # Create singleton instance
