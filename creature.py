@@ -3185,6 +3185,10 @@ class CreatureBrowser(QMainWindow):
         if not hasattr(self, 'tabs'):
             return
         
+        # Ctrl+T - New tab
+        new_tab_shortcut = QShortcut(QKeySequence("Ctrl+T"), self)
+        new_tab_shortcut.activated.connect(self.add_new_tab)
+        
         # Ctrl+Shift+Right - Next tab
         next_tab_shortcut = QShortcut(QKeySequence("Ctrl+Shift+Right"), self)
         next_tab_shortcut.activated.connect(self.next_tab)
