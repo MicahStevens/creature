@@ -10,7 +10,8 @@ from PyQt6.QtWidgets import (QApplication, QMainWindow, QVBoxLayout,
                             QListWidgetItem, QSplashScreen, QTextBrowser, QFormLayout,
                             QMenu, QScrollArea, QInputDialog)
 from PyQt6.QtWebEngineWidgets import QWebEngineView
-from PyQt6.QtWebEngineCore import QWebEngineProfile, QWebEngineSettings, QWebEngineScript, QWebEnginePage, QWebEngineCertificateError
+from PyQt6.QtWebEngineCore import (QWebEngineProfile, QWebEngineSettings, QWebEngineScript, 
+                                        QWebEnginePage, QWebEngineCertificateError, QWebEnginePermission)
 from PyQt6.QtCore import QUrl, QStandardPaths, QDir, QTimer, Qt, pyqtSignal, QSize
 from PyQt6.QtGui import QPalette, QColor, QShortcut, QKeySequence, QFont, QFontDatabase, QPixmap, QIcon, QAction
 import json
@@ -29,6 +30,8 @@ from configobj import ConfigObj
 from validate import Validator
 from keepassxc_manager import keepass_manager, KeePassXCError
 import logging
+import uuid
+import time
 
 # Application constants
 CREATURE_VERSION = "0.1.0"
@@ -50,6 +53,32 @@ setup_logging()
 
 # Create module logger
 logger = logging.getLogger(__name__)
+
+# Firefox bookmarks format utilities
+def generate_guid():
+    """Generate a Firefox-compatible GUID."""
+    return str(uuid.uuid4()).replace('-', '')[:12]
+
+def datetime_to_firefox_timestamp(dt=None):
+    """Convert datetime to Firefox timestamp (microseconds since Unix epoch)."""
+    if dt is None:
+        dt = datetime.now()
+    elif isinstance(dt, str):
+        # Parse ISO string if provided
+        try:
+            dt = datetime.fromisoformat(dt.replace('Z', '+00:00'))
+        except:
+            dt = datetime.now()
+    
+    return int(dt.timestamp() * 1000000)
+
+def firefox_timestamp_to_datetime(timestamp):
+    """Convert Firefox timestamp to datetime."""
+    try:
+        # Firefox timestamps are in microseconds
+        return datetime.fromtimestamp(timestamp / 1000000)
+    except:
+        return datetime.now()
 
 def process_url_or_search(input_text):
     """Process user input to determine if it's a URL or search query.
@@ -409,61 +438,248 @@ class BookmarkManager:
         return profile_dir / 'bookmarks.json'
     
     def _load_bookmarks(self):
-        """Load bookmarks from file."""
+        """Load bookmarks from file, handling both old and Firefox formats."""
         if self.bookmarks_file.exists():
             try:
                 with open(self.bookmarks_file, 'r', encoding='utf-8') as f:
                     data = json.load(f)
-                    return data.get('bookmarks', [])
+                    
+                    # Check if it's Firefox format (has guid and root)
+                    if isinstance(data, dict) and 'guid' in data and 'root' in data:
+                        return data
+                    
+                    # Check if it's old format wrapped in bookmarks key
+                    elif isinstance(data, dict) and 'bookmarks' in data:
+                        # Convert old format to Firefox format
+                        return self._convert_old_format_to_firefox(data['bookmarks'])
+                    
+                    # Check if it's old format as array
+                    elif isinstance(data, list):
+                        # Convert old format to Firefox format
+                        return self._convert_old_format_to_firefox(data)
+                        
             except Exception as e:
-                logger.warning(f"Failed to load bookmarks: {e}")
+                logger.error(f"Failed to load bookmarks: {e}")
         
         # Return default bookmarks if file doesn't exist or loading fails
         return self._get_default_bookmarks()
     
     def _get_default_bookmarks(self):
-        """Return default bookmarks for new profiles."""
-        return [
-            {
-                'type': 'bookmark',
-                'title': 'Creature Browser',
-                'url': 'https://github.com/anthropics/claude-code',
-                'favicon': None,
-                'date_added': datetime.now().isoformat()
-            },
-            {
-                'type': 'folder',
-                'title': 'Search Engines',
-                'expanded': True,
-                'children': [
-                    {
-                        'type': 'bookmark',
-                        'title': 'Google',
-                        'url': 'https://www.google.com',
-                        'favicon': None,
-                        'date_added': datetime.now().isoformat()
-                    },
-                    {
-                        'type': 'bookmark',
-                        'title': 'DuckDuckGo',
-                        'url': 'https://duckduckgo.com',
-                        'favicon': None,
-                        'date_added': datetime.now().isoformat()
-                    }
-                ]
-            }
-        ]
+        """Return default bookmarks in Firefox format."""
+        now = datetime_to_firefox_timestamp()
+        
+        return {
+            "guid": "root________",
+            "title": "",
+            "index": 0,
+            "dateAdded": now,
+            "lastModified": now,
+            "id": 1,
+            "typeCode": 2,
+            "type": "text/x-moz-place-container",
+            "root": "placesRoot",
+            "children": [
+                {
+                    "guid": "menu________",
+                    "title": "Bookmarks Menu",
+                    "index": 0,
+                    "dateAdded": now,
+                    "lastModified": now,
+                    "id": 2,
+                    "typeCode": 2,
+                    "type": "text/x-moz-place-container",
+                    "root": "bookmarksMenuFolder",
+                    "children": [
+                        {
+                            "guid": generate_guid(),
+                            "title": "Creature Browser",
+                            "index": 0,
+                            "dateAdded": now,
+                            "lastModified": now,
+                            "id": 3,
+                            "typeCode": 1,
+                            "type": "text/x-moz-place",
+                            "uri": "https://github.com/anthropics/claude-code"
+                        },
+                        {
+                            "guid": generate_guid(),
+                            "title": "🔍 Search Engines",  # Icon in title for custom folder icon
+                            "index": 1,
+                            "dateAdded": now,
+                            "lastModified": now,
+                            "id": 4,
+                            "typeCode": 2,
+                            "type": "text/x-moz-place-container",
+                            "children": [
+                                {
+                                    "guid": generate_guid(),
+                                    "title": "Google",
+                                    "index": 0,
+                                    "dateAdded": now,
+                                    "lastModified": now,
+                                    "id": 5,
+                                    "typeCode": 1,
+                                    "type": "text/x-moz-place",
+                                    "uri": "https://www.google.com"
+                                },
+                                {
+                                    "guid": generate_guid(),
+                                    "title": "DuckDuckGo",
+                                    "index": 1,
+                                    "dateAdded": now,
+                                    "lastModified": now,
+                                    "id": 6,
+                                    "typeCode": 1,
+                                    "type": "text/x-moz-place",
+                                    "uri": "https://duckduckgo.com"
+                                }
+                            ]
+                        },
+                        {
+                            "guid": generate_guid(),
+                            "title": "⚡ Development",  # Icon in title for custom folder icon
+                            "index": 2,
+                            "dateAdded": now,
+                            "lastModified": now,
+                            "id": 7,
+                            "typeCode": 2,
+                            "type": "text/x-moz-place-container",
+                            "children": [
+                                {
+                                    "guid": generate_guid(),
+                                    "title": "GitHub",
+                                    "index": 0,
+                                    "dateAdded": now,
+                                    "lastModified": now,
+                                    "id": 8,
+                                    "typeCode": 1,
+                                    "type": "text/x-moz-place",
+                                    "uri": "https://github.com"
+                                },
+                                {
+                                    "guid": generate_guid(),
+                                    "title": "📚 Documentation",  # Nested folder with icon
+                                    "index": 1,
+                                    "dateAdded": now,
+                                    "lastModified": now,
+                                    "id": 9,
+                                    "typeCode": 2,
+                                    "type": "text/x-moz-place-container",
+                                    "children": [
+                                        {
+                                            "guid": generate_guid(),
+                                            "title": "MDN Web Docs",
+                                            "index": 0,
+                                            "dateAdded": now,
+                                            "lastModified": now,
+                                            "id": 10,
+                                            "typeCode": 1,
+                                            "type": "text/x-moz-place",
+                                            "uri": "https://developer.mozilla.org"
+                                        },
+                                        {
+                                            "guid": generate_guid(),
+                                            "title": "Python Docs",
+                                            "index": 1,
+                                            "dateAdded": now,
+                                            "lastModified": now,
+                                            "id": 11,
+                                            "typeCode": 1,
+                                            "type": "text/x-moz-place",
+                                            "uri": "https://docs.python.org"
+                                        }
+                                    ]
+                                }
+                            ]
+                        }
+                    ]
+                }
+            ]
+        }
+    
+    def _convert_old_format_to_firefox(self, old_bookmarks):
+        """Convert old bookmark format to Firefox format."""
+        now = datetime_to_firefox_timestamp()
+        next_id = 1
+        
+        def convert_item(item, index=0):
+            nonlocal next_id
+            current_id = next_id
+            next_id += 1
+            
+            if item.get('type') == 'bookmark':
+                return {
+                    "guid": generate_guid(),
+                    "title": item.get('title', 'Untitled'),
+                    "index": index,
+                    "dateAdded": datetime_to_firefox_timestamp(item.get('date_added')),
+                    "lastModified": now,
+                    "id": current_id,
+                    "typeCode": 1,
+                    "type": "text/x-moz-place",
+                    "uri": item.get('url', '')
+                }
+            elif item.get('type') == 'folder':
+                # Extract icon from title if it starts with an emoji
+                title = item.get('title', 'Folder')
+                icon = item.get('icon', '')
+                if icon and not title.startswith(icon):
+                    title = f"{icon} {title}"
+                
+                folder = {
+                    "guid": generate_guid(),
+                    "title": title,
+                    "index": index,
+                    "dateAdded": datetime_to_firefox_timestamp(item.get('date_added')),
+                    "lastModified": now,
+                    "id": current_id,
+                    "typeCode": 2,
+                    "type": "text/x-moz-place-container"
+                }
+                
+                if 'children' in item:
+                    folder['children'] = [convert_item(child, i) for i, child in enumerate(item['children'])]
+                
+                return folder
+            
+            return None
+        
+        # Convert items and wrap in Firefox root structure
+        converted_children = [convert_item(item, i) for i, item in enumerate(old_bookmarks) if item]
+        converted_children = [item for item in converted_children if item is not None]
+        
+        return {
+            "guid": "root________",
+            "title": "",
+            "index": 0,
+            "dateAdded": now,
+            "lastModified": now,
+            "id": next_id,
+            "typeCode": 2,
+            "type": "text/x-moz-place-container",
+            "root": "placesRoot",
+            "children": [
+                {
+                    "guid": "menu________",
+                    "title": "Bookmarks Menu",
+                    "index": 0,
+                    "dateAdded": now,
+                    "lastModified": now,
+                    "id": next_id + 1,
+                    "typeCode": 2,
+                    "type": "text/x-moz-place-container",
+                    "root": "bookmarksMenuFolder",
+                    "children": converted_children
+                }
+            ]
+        }
     
     def save_bookmarks(self):
-        """Save bookmarks to file."""
+        """Save bookmarks to file in Firefox format."""
         try:
-            data = {
-                'version': '1.0',
-                'last_modified': datetime.now().isoformat(),
-                'bookmarks': self.bookmarks
-            }
+            # Save directly as Firefox format (self.bookmarks is already Firefox format)
             with open(self.bookmarks_file, 'w', encoding='utf-8') as f:
-                json.dump(data, f, indent=2, ensure_ascii=False)
+                json.dump(self.bookmarks, f, indent=2, ensure_ascii=False)
             logger.info(f"Saved bookmarks to {self.bookmarks_file}")
         except Exception as e:
             logger.error(f"Failed to save bookmarks: {e}")
@@ -583,7 +799,7 @@ class FaviconManager:
                 return str(favicon_path)
             
         except Exception as e:
-            logger.warning(f"Error getting favicon for {url}: {e}")
+            logger.debug(f"Error getting favicon for {url}: {e}")
         
         return None
     
@@ -623,7 +839,7 @@ class FaviconManager:
                     continue
             
         except Exception as e:
-            logger.warning(f"Error fetching favicon: {e}")
+            logger.debug(f"Error fetching favicon: {e}")
         
         return None
     
@@ -772,26 +988,46 @@ class BookmarkToolbar(QWidget):
             if child:
                 child.setParent(None)
         
-        # Add bookmark widgets
-        self._add_bookmark_items(self.bookmark_manager.bookmarks)
+        # Add bookmark widgets (extract bookmarks from Firefox format)
+        bookmarks_data = self._get_bookmarks_menu_items()
+        self._add_bookmark_items(bookmarks_data)
         
         # Add stretch at end
         self.content_layout.addStretch()
     
+    def _get_bookmarks_menu_items(self):
+        """Extract bookmark items from Firefox format."""
+        bookmarks_root = self.bookmark_manager.bookmarks
+        
+        # Navigate to bookmarks menu folder
+        if isinstance(bookmarks_root, dict) and 'children' in bookmarks_root:
+            for child in bookmarks_root['children']:
+                if child.get('root') == 'bookmarksMenuFolder':
+                    return child.get('children', [])
+        
+        # Fallback to root children if no bookmarks menu found
+        if isinstance(bookmarks_root, dict) and 'children' in bookmarks_root:
+            return bookmarks_root.get('children', [])
+        
+        # If it's old format (list), return as-is
+        if isinstance(bookmarks_root, list):
+            return bookmarks_root
+            
+        return []
+    
     def _add_bookmark_items(self, items, indent_level=0):
         """Recursively add bookmark items to the layout."""
         for item in items:
-            if item.get('type') == 'folder':
-                # Add folder header (if not at root level)
-                if indent_level > 0:
-                    folder_widget = self._create_folder_widget(item, indent_level)
-                    self.content_layout.addWidget(folder_widget)
-                
-                # Add folder contents
-                if item.get('expanded', True) and 'children' in item:
-                    self._add_bookmark_items(item['children'], indent_level + 1)
+            item_type = item.get('type', '')
+            
+            # Handle Firefox format folder types
+            if item_type == 'text/x-moz-place-container' or item_type == 'folder':
+                # Create folder button (show folders at all levels as clickable buttons)
+                folder_widget = self._create_folder_widget(item, indent_level)
+                self.content_layout.addWidget(folder_widget)
                     
-            elif item.get('type') == 'bookmark':
+            # Handle Firefox format bookmark types
+            elif item_type == 'text/x-moz-place' or item_type == 'bookmark':
                 bookmark_widget = self._create_bookmark_widget(item, indent_level)
                 self.content_layout.addWidget(bookmark_widget)
     
@@ -799,10 +1035,12 @@ class BookmarkToolbar(QWidget):
         """Create a bookmark button widget."""
         button = QPushButton()
         button.setFixedSize(36, 36)
-        button.setToolTip(f"{bookmark.get('title', 'Untitled')}\n{bookmark.get('url', '')}")
+        # Get URL from Firefox format (uri) or old format (url)
+        url = bookmark.get('uri', bookmark.get('url', ''))
+        button.setToolTip(f"{bookmark.get('title', 'Untitled')}\n{url}")
         
         # Set favicon icon
-        favicon_path = self.favicon_manager.get_favicon_path(bookmark.get('url', ''))
+        favicon_path = self.favicon_manager.get_favicon_path(url)
         if favicon_path and Path(favicon_path).exists():
             icon = QIcon(favicon_path)
             button.setIcon(icon)
@@ -842,25 +1080,130 @@ class BookmarkToolbar(QWidget):
         return button
     
     def _create_folder_widget(self, folder, indent_level):
-        """Create a folder separator widget."""
-        label = QLabel(folder.get('title', 'Folder'))
-        label.setStyleSheet("""
-            QLabel {
-                color: #666;
-                font-size: 10px;
+        """Create a folder button widget with submenu functionality."""
+        button = QPushButton()
+        button.setFixedSize(36, 36)
+        button.setToolTip(folder.get('title', 'Folder'))
+        
+        # Extract folder icon from title (Firefox format stores icon in title)
+        title = folder.get('title', 'Folder')
+        folder_icon = '📁'  # default
+        
+        # Check if title starts with an emoji (for Firefox format)
+        if title and len(title) > 0:
+            first_char = title[0]
+            # Check if first character is likely an emoji (basic check)
+            if ord(first_char) > 127:  # Non-ASCII, likely emoji
+                folder_icon = first_char
+        
+        # Fallback to custom icon field (for old format compatibility)
+        if 'icon' in folder:
+            folder_icon = folder['icon']
+            
+        button.setText(folder_icon)
+        
+        # Apply themed styling similar to bookmark buttons
+        button.setStyleSheet(f"""
+            QPushButton {{
+                border: 1px solid {self.colors.get('border_color', '#ccc')};
+                border-radius: 4px;
+                background-color: {self.colors.get('button_bg', '#fff')};
+                color: {self.colors.get('text_color', '#666')};
+                font-size: 14px;
                 font-weight: bold;
-                padding: 2px;
-                background-color: #eee;
-                border-radius: 2px;
-            }
+            }}
+            QPushButton:hover {{
+                background-color: {self.colors.get('tab_hover_bg', '#e8f4fd')};
+                border-color: {self.colors.get('accent', '#0078d4')};
+            }}
+            QPushButton:pressed {{
+                background-color: {self.colors.get('accent', '#cde7f7')};
+                color: white;
+            }}
         """)
-        label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        label.setFixedHeight(16)
-        return label
+        
+        # Connect to show folder submenu
+        button.clicked.connect(lambda: self.show_folder_submenu(folder, button))
+        
+        return button
+    
+    def show_folder_submenu(self, folder, button):
+        """Show a popup menu with folder contents."""
+        from PyQt6.QtWidgets import QMenu
+        
+        menu = QMenu(self)
+        children = folder.get('children', [])
+        
+        if not children:
+            # Empty folder
+            empty_action = menu.addAction("(Empty folder)")
+            empty_action.setEnabled(False)
+        else:
+            # Add folder contents to menu
+            self._add_folder_contents_to_menu(menu, children)
+        
+        # Show menu at button position
+        button_pos = button.mapToGlobal(button.rect().bottomLeft())
+        menu.exec(button_pos)
+    
+    def _add_folder_contents_to_menu(self, menu, items):
+        """Recursively add folder contents to menu."""
+        for item in items:
+            item_type = item.get('type', '')
+            
+            # Handle Firefox format bookmark types
+            if item_type == 'text/x-moz-place' or item_type == 'bookmark':
+                # Add bookmark as menu action
+                title = item.get('title', 'Untitled')
+                action = menu.addAction(title)
+                action.triggered.connect(lambda checked, bookmark=item: self.navigate_to_bookmark(bookmark))
+                
+                # Add favicon if available (handle both Firefox uri and old url)
+                url = item.get('uri', item.get('url', ''))
+                favicon_path = self.favicon_manager.get_favicon_path(url)
+                if favicon_path:
+                    try:
+                        pixmap = QPixmap(favicon_path)
+                        if not pixmap.isNull():
+                            # Scale favicon to menu icon size
+                            scaled_pixmap = pixmap.scaled(16, 16, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+                            action.setIcon(QIcon(scaled_pixmap))
+                    except Exception:
+                        pass  # Use text-only if favicon fails
+                        
+            # Handle Firefox format folder types
+            elif item_type == 'text/x-moz-place-container' or item_type == 'folder':
+                # Add submenu for nested folder
+                folder_title = item.get('title', 'Folder')
+                
+                # Extract icon from title (Firefox format) or use icon field (old format)
+                folder_icon = '📁'  # default
+                if folder_title and len(folder_title) > 0:
+                    first_char = folder_title[0]
+                    if ord(first_char) > 127:  # Non-ASCII, likely emoji
+                        folder_icon = first_char
+                        # Remove icon from displayed title
+                        if folder_title.startswith(folder_icon + ' '):
+                            folder_title = folder_title[2:]
+                
+                # Fallback to custom icon field (old format)
+                if 'icon' in item:
+                    folder_icon = item['icon']
+                    
+                submenu = menu.addMenu(f"{folder_icon} {folder_title}")
+                
+                # Recursively add nested folder contents
+                nested_children = item.get('children', [])
+                if nested_children:
+                    self._add_folder_contents_to_menu(submenu, nested_children)
+                else:
+                    empty_action = submenu.addAction("(Empty folder)")
+                    empty_action.setEnabled(False)
     
     def navigate_to_bookmark(self, bookmark):
         """Navigate to bookmark URL."""
-        url = bookmark.get('url')
+        # Get URL from Firefox format (uri) or old format (url)
+        url = bookmark.get('uri', bookmark.get('url'))
         if url:
             # Find parent browser tab and navigate
             parent_tab = self.parent()
@@ -994,6 +1337,31 @@ class ProfileManager:
         profile = QWebEngineProfile(f"profile_{profile_name}")
         profile.setPersistentStoragePath(profile_path)
         profile.setCachePath(profile_path + "/cache")
+        
+        # Store profile name for permission handler
+        profile.profile_name = profile_name
+        
+        # Debug: Check for profile-level permission handling
+        logger.debug("=== QWebEngineProfile available attributes ===")
+        for attr in sorted(dir(profile)):
+            if 'permission' in attr.lower() or 'feature' in attr.lower():
+                logger.debug(f"Profile has attribute: {attr}")
+        
+        # Set up modern permission handling using profile permission policy
+        try:
+            # Set persistent permissions policy to ask for each permission
+            if hasattr(profile, 'setPersistentPermissionsPolicy'):
+                profile.setPersistentPermissionsPolicy(profile.PersistentPermissionsPolicy.AskEveryTime)
+                logger.info("Set persistent permissions policy to AskEveryTime")
+            
+            # Auto-grant common permissions for debugging
+            self._setup_auto_permissions(profile, profile_name)
+            
+            # Feature permission is handled at page level, not profile level
+            logger.info("Feature permission handling will be done at page level")
+            
+        except Exception as e:
+            logger.error(f"Could not set up permission policy: {e}")
 
         # Enable features from config
         settings = profile.settings()
@@ -1003,8 +1371,242 @@ class ProfileManager:
                             creature_config.browser.local_storage_enabled)
         settings.setAttribute(QWebEngineSettings.WebAttribute.PluginsEnabled, 
                             creature_config.browser.plugins_enabled)
+        
+        # Get profile-specific WebRTC settings
+        screen_capture_enabled = self.get_profile_setting(profile_name, 'screen_capture_enabled', True)
+        
+        # Enable WebRTC features for camera/microphone support based on profile config
+        settings.setAttribute(QWebEngineSettings.WebAttribute.ScreenCaptureEnabled, screen_capture_enabled)
+        settings.setAttribute(QWebEngineSettings.WebAttribute.WebRTCPublicInterfacesOnly, False)
+        
+        # Additional media-related settings
+        settings.setAttribute(QWebEngineSettings.WebAttribute.PlaybackRequiresUserGesture, False)
+        settings.setAttribute(QWebEngineSettings.WebAttribute.AllowRunningInsecureContent, False)
+        
+        # Enable WebGL and graphics acceleration
+        settings.setAttribute(QWebEngineSettings.WebAttribute.WebGLEnabled, True)
+        settings.setAttribute(QWebEngineSettings.WebAttribute.Accelerated2dCanvasEnabled, True)
+        settings.setAttribute(QWebEngineSettings.WebAttribute.PdfViewerEnabled, True)
+        
+        # Permission handling is done through web pages, not profiles
 
         return profile
+    
+    def get_profile_setting(self, profile_name, setting_name, default_value):
+        """Get a profile-specific setting with fallback to default."""
+        try:
+            if hasattr(creature_config, 'profiles') and profile_name in creature_config.profiles:
+                profile_config = creature_config.profiles[profile_name]
+                return profile_config.get(setting_name, default_value)
+        except Exception as e:
+            logger.debug(f"Error getting profile setting {setting_name} for {profile_name}: {e}")
+        
+        return default_value
+    
+    def _setup_auto_permissions(self, profile, profile_name):
+        """Set up automatic permission granting for debugging."""
+        try:
+            from PyQt6.QtCore import QUrl
+            
+            # Common sites that need camera/microphone
+            sites_to_grant = [
+                "https://meet.google.com",
+                "https://zoom.us", 
+                "https://teams.microsoft.com",
+                "https://discord.com",
+                "https://whereby.com"
+            ]
+            
+            # Permission types to auto-grant (using correct enum names)
+            permissions_to_grant = [
+                "Camera", "Microphone", "MediaAudioCapture", 
+                "MediaVideoCapture", "MediaAudioVideoCapture"
+            ]
+            
+            logger.info("Auto-granting permissions for common video conferencing sites...")
+            
+            # Debug: List available permission types
+            logger.debug("=== Available Permission Types ===")
+            for attr in sorted(dir(QWebEnginePermission.PermissionType)):
+                if not attr.startswith('_'):
+                    logger.debug(f"Permission type: {attr}")
+            
+            # Debug: Check QWebEnginePermission constructor
+            logger.debug("=== QWebEnginePermission Constructor Info ===")
+            try:
+                # Try to create empty permission to see constructor signature
+                test_perm = QWebEnginePermission()
+                logger.debug("Empty QWebEnginePermission constructor works")
+            except Exception as e:
+                logger.debug(f"Empty constructor failed: {e}")
+            
+            # Skip auto-granting individual permissions since QWebEnginePermission 
+            # objects must be created by the browser engine, not manually
+            logger.info("Permissions will be auto-granted when requested by the page")
+                        
+        except Exception as e:
+            logger.error(f"Error setting up auto-permissions: {e}")
+    
+    def _handle_feature_permission(self, url, feature, profile, profile_name):
+        """Handle feature permission requests at profile level."""
+        logger.debug(f"PROFILE FEATURE PERMISSION REQUEST!")
+        logger.debug(f"URL: {url.toString()}")
+        logger.debug(f"Feature: {feature}")
+        logger.debug(f"Profile: {profile_name}")
+        
+        try:
+            # Auto-grant the feature permission  
+            profile.setPermission(url, feature, QWebEnginePage.PermissionPolicy.PermissionGrantedByUser)
+            logger.info(f"AUTO-GRANTED feature {feature} for {url.toString()}")
+        except Exception as e:
+            logger.error(f"Error granting feature permission: {e}")
+    
+    def get_stored_permission(self, profile_name, origin, permission_type):
+        """Get stored permission for a site and permission type."""
+        try:
+            if hasattr(creature_config, 'profiles') and profile_name in creature_config.profiles:
+                profile_config = creature_config.profiles[profile_name]
+                permissions_key = f"permissions_{origin.replace('.', '_')}"
+                
+                if permissions_key in profile_config:
+                    site_permissions = profile_config[permissions_key]
+                    return site_permissions.get(str(permission_type.value), None)
+        except Exception as e:
+            logger.debug(f"Error getting stored permission: {e}")
+        
+        return None
+    
+    def save_permission(self, profile_name, origin, permission_type, granted):
+        """Save permission decision to config."""
+        try:
+            # Ensure the profile section exists
+            if not hasattr(creature_config, 'profiles'):
+                creature_config._config['profiles'] = {}
+            
+            if profile_name not in creature_config.profiles:
+                creature_config._config['profiles'][profile_name] = {}
+            
+            # Create permissions key for this origin
+            permissions_key = f"permissions_{origin.replace('.', '_')}"
+            
+            # Get or create the permissions section for this site
+            profile_section = creature_config._config['profiles'][profile_name]
+            if permissions_key not in profile_section:
+                profile_section[permissions_key] = {}
+            
+            # Store the permission decision
+            profile_section[permissions_key][str(permission_type.value)] = granted
+            
+            # Save the config
+            creature_config.save()
+            logger.info(f"Saved permission {permission_type} = {granted} for {origin} in profile {profile_name}")
+            
+        except Exception as e:
+            logger.error(f"Error saving permission: {e}")
+    
+    def handle_permission_request(self, permission, profile_name):
+        """Handle permission requests for camera, microphone, etc."""
+        from PyQt6.QtWidgets import QMessageBox
+        
+        permission_type = permission.permissionType()
+        origin = permission.origin().host()
+        
+        logger.debug(f"=== PERMISSION REQUEST ===")
+        logger.debug(f"Type: {permission_type}")
+        logger.debug(f"Origin: {origin}")
+        logger.debug(f"Profile: {profile_name}")
+        logger.debug(f"State: {permission.state()}")
+        
+        # Check for stored permission first
+        stored_permission = self.get_stored_permission(profile_name, origin, permission_type)
+        if stored_permission is not None:
+            if stored_permission:
+                permission.grant()
+                logger.info(f"Auto-granted {permission_type} permission to {origin} for profile {profile_name} (stored)")
+            else:
+                permission.deny()
+                logger.info(f"Auto-denied {permission_type} permission to {origin} for profile {profile_name} (stored)")
+            return
+        
+        # Get profile-specific WebRTC settings
+        webrtc_enabled = self.get_profile_setting(profile_name, 'webrtc_enabled', True)
+        camera_enabled = self.get_profile_setting(profile_name, 'camera_enabled', True)
+        microphone_enabled = self.get_profile_setting(profile_name, 'microphone_enabled', True)
+        screen_capture_enabled = self.get_profile_setting(profile_name, 'screen_capture_enabled', True)
+        
+        # Check if WebRTC is disabled for this profile
+        if not webrtc_enabled:
+            permission.deny()
+            self.save_permission(profile_name, origin, permission_type, False)
+            logger.info(f"Denied {permission_type} permission to {origin} - WebRTC disabled for profile {profile_name}")
+            return
+        
+        # Check specific permission types against profile config
+        camera_types = {
+            QWebEnginePermission.PermissionType.Camera,
+            QWebEnginePermission.PermissionType.MediaVideoCapture,
+            QWebEnginePermission.PermissionType.MediaAudioVideoCapture
+        }
+        
+        microphone_types = {
+            QWebEnginePermission.PermissionType.Microphone,
+            QWebEnginePermission.PermissionType.MediaAudioCapture,
+            QWebEnginePermission.PermissionType.MediaAudioVideoCapture
+        }
+        
+        screen_types = {
+            QWebEnginePermission.PermissionType.DesktopVideoCapture,
+            QWebEnginePermission.PermissionType.DesktopAudioVideoCapture
+        }
+        
+        # Check if this permission type is disabled in profile config
+        if (permission_type in camera_types and not camera_enabled) or \
+           (permission_type in microphone_types and not microphone_enabled) or \
+           (permission_type in screen_types and not screen_capture_enabled):
+            permission.deny()
+            self.save_permission(profile_name, origin, permission_type, False)
+            logger.info(f"Denied {permission_type} permission to {origin} - disabled for profile {profile_name}")
+            return
+        
+        # Map permission types to user-friendly names
+        permission_names = {
+            QWebEnginePermission.PermissionType.Camera: "Camera",
+            QWebEnginePermission.PermissionType.Microphone: "Microphone", 
+            QWebEnginePermission.PermissionType.MediaAudioCapture: "Audio recording",
+            QWebEnginePermission.PermissionType.MediaVideoCapture: "Video recording",
+            QWebEnginePermission.PermissionType.MediaAudioVideoCapture: "Camera and microphone",
+            QWebEnginePermission.PermissionType.DesktopVideoCapture: "Screen sharing",
+            QWebEnginePermission.PermissionType.DesktopAudioVideoCapture: "Screen and audio sharing",
+            QWebEnginePermission.PermissionType.Geolocation: "Location access",
+            QWebEnginePermission.PermissionType.Notifications: "Notifications"
+        }
+        
+        permission_name = permission_names.get(permission_type, "Unknown permission")
+        
+        # TEMPORARY: Auto-grant permissions for debugging
+        logger.info(f"AUTO-GRANTING {permission_name} permission to {origin} for profile {profile_name}")
+        permission.grant()
+        self.save_permission(profile_name, origin, permission_type, True)
+        return
+        
+        # Show permission dialog with profile information (disabled for debugging)
+        # reply = QMessageBox.question(
+        #     None,
+        #     "Permission Request", 
+        #     f"{origin} wants to access your {permission_name}.\n\nProfile: {profile_name}\n\nDo you want to allow this?",
+        #     QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        #     QMessageBox.StandardButton.Yes
+        # )
+        
+        # (Original permission dialog handling - disabled for debugging)
+        # if reply == QMessageBox.StandardButton.Yes:
+        #     permission.grant()
+        #     self.save_permission(profile_name, origin, permission_type, True)
+        #     logger.info(f"Granted {permission_name} permission to {origin} for profile {profile_name}")
+        # else:
+        #     permission.deny()
+        #     self.save_permission(profile_name, origin, permission_type, False)
+        #     logger.info(f"Denied {permission_name} permission to {origin} for profile {profile_name}")
 
 class ThemeManager:
     def __init__(self):
@@ -1352,6 +1954,66 @@ class SSLAwarePage(QWebEnginePage):
             'certificate_info': None,
             'errors': []
         }
+        self.profile_name = getattr(profile, 'profile_name', 'default')
+        
+        # Debug: List all available signals/methods
+        logger.debug("=== QWebEnginePage available attributes ===")
+        for attr in sorted(dir(self)):
+            if 'permission' in attr.lower() or 'feature' in attr.lower():
+                logger.debug(f"Found attribute: {attr}")
+        
+        # Connect permission request handler
+        try:
+            # Try the standard signal name
+            self.permissionRequested.connect(self.handle_permission_request)
+            logger.info("Connected to permissionRequested signal")
+        except AttributeError:
+            logger.error("Could not connect to permissionRequested signal!")
+        
+        # ALSO try feature permission signal
+        try:
+            self.featurePermissionRequested.connect(self.handle_feature_permission_request)
+            logger.info("Connected to featurePermissionRequested signal")
+        except AttributeError:
+            logger.debug("featurePermissionRequested not available")
+        
+        # Store original setFeaturePermission method
+        self._original_setFeaturePermission = self.setFeaturePermission
+        
+        # Override setFeaturePermission to intercept calls
+        def intercepted_setFeaturePermission(securityOrigin, feature, policy):
+            logger.debug(f"🔍 INTERCEPTED setFeaturePermission call!")
+            logger.debug(f"🌐 Security Origin: {securityOrigin.toString()}")
+            logger.debug(f"🎥 Feature: {feature}")
+            logger.debug(f"📋 Policy: {policy}")
+            return self._original_setFeaturePermission(securityOrigin, feature, policy)
+        
+        self.setFeaturePermission = intercepted_setFeaturePermission
+        
+        # Also add a load finished handler to monitor page activity
+        self.loadFinished.connect(self._on_load_finished)
+        
+        # Add more debugging signals
+        try:
+            # Monitor all possible permission-related signals
+            if hasattr(self, 'permissionRequested'):
+                # Add a lambda to capture all args
+                self.permissionRequested.connect(lambda *args: logger.debug(f"🚨 permissionRequested signal triggered with args: {args}"))
+            
+            if hasattr(self, 'featurePermissionRequested'):
+                # Add a lambda to capture all args  
+                self.featurePermissionRequested.connect(lambda *args: logger.debug(f"🚨 featurePermissionRequested signal triggered with args: {args}"))
+                
+            # Try to connect to profile-level signals if they exist
+            profile = self.profile()
+            if profile and hasattr(profile, 'permissionRequested'):
+                profile.permissionRequested.connect(lambda *args: logger.debug(f"🚨 PROFILE permissionRequested signal triggered with args: {args}"))
+                
+        except Exception as e:
+            logger.debug(f"Error setting up debug signals: {e}")
+        
+        # Add JavaScript injection to monitor media API calls
+        self._inject_media_debug_script()
     
     def certificateError(self, error):
         """Handle SSL certificate errors and extract certificate information."""
@@ -1396,6 +2058,179 @@ class SSLAwarePage(QWebEnginePage):
         # Return True to accept certificate (override error) or False to reject
         # For now, accept overridable errors but mark as invalid
         return error.isOverridable()
+    
+    def handle_permission_request(self, permission):
+        """Handle permission requests for this page."""
+        logger.debug(f"SSLAwarePage.handle_permission_request called!")
+        try:
+            # Check if permission is still valid/pending to avoid duplicate processing
+            if not permission:
+                logger.debug("Permission is None, skipping")
+                return
+                
+            logger.debug(f"Permission state: {permission.state()}")
+            try:
+                if hasattr(permission, 'State') and permission.state() != permission.State.Requested:
+                    logger.debug(f"Permission request not in requested state ({permission.state()}), skipping")
+                    return
+            except AttributeError:
+                # Skip state check if State enum is not accessible
+                pass
+                
+            permission_type = permission.permissionType()
+            origin = permission.origin().host()
+            logger.debug(f"SSLAwarePage handling permission request: {permission_type} for {origin}")
+            
+            # Get the main browser instance to access ProfileManager
+            main_window = self.parent()
+            while main_window and not hasattr(main_window, 'profile_manager'):
+                main_window = main_window.parent()
+            
+            if main_window and hasattr(main_window, 'profile_manager'):
+                main_window.profile_manager.handle_permission_request(permission, self.profile_name)
+            else:
+                logger.error("Could not find ProfileManager to handle permission request")
+                permission.grant()  # Default to grant if we can't find the manager
+        except Exception as e:
+            logger.error(f"Error handling permission request: {e}")
+            # Always respond to avoid hanging permission requests
+            try:
+                if permission:
+                    try:
+                        if hasattr(permission, 'State') and permission.state() == permission.State.Requested:
+                            permission.grant()
+                        else:
+                            permission.grant()  # Grant anyway
+                    except AttributeError:
+                        permission.grant()  # Grant anyway if state check fails
+            except Exception:
+                pass  # Ignore errors when trying to respond
+    
+    def _on_load_finished(self, ok):
+        """Monitor when pages finish loading."""
+        current_url = self.url().toString()
+        if "meet.google.com" in current_url:
+            logger.info(f"📄 Google Meet page loaded: {current_url}")
+            logger.info("💡 Try clicking camera/microphone buttons to trigger permission requests!")
+            # Re-inject our debug script after page loads
+            self._inject_media_debug_script()
+            # Pre-grant permissions for Google Meet to avoid stuck requests
+            self._pre_grant_google_meet_permissions()
+    
+    def _inject_media_debug_script(self):
+        """Inject JavaScript to monitor getUserMedia calls."""
+        js_code = """
+        // Override getUserMedia to log when it's called
+        if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+            const originalGetUserMedia = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
+            navigator.mediaDevices.getUserMedia = function(constraints) {
+                console.log('🎥 getUserMedia called with constraints:', constraints);
+                console.log('🚨 JavaScript: Media permission being requested!');
+                return originalGetUserMedia(constraints).then(stream => {
+                    console.log('✅ getUserMedia successful, stream:', stream);
+                    return stream;
+                }).catch(error => {
+                    console.log('❌ getUserMedia failed:', error);
+                    throw error;
+                });
+            };
+            console.log('🔧 getUserMedia monitoring injected');
+        } else {
+            console.log('❌ getUserMedia not available');
+        }
+        
+        // Also check for older getUserMedia API
+        if (navigator.getUserMedia) {
+            const originalGetUserMedia2 = navigator.getUserMedia.bind(navigator);
+            navigator.getUserMedia = function(constraints, success, error) {
+                console.log('🎥 Legacy getUserMedia called with constraints:', constraints);
+                console.log('🚨 JavaScript: Legacy media permission being requested!');
+                return originalGetUserMedia2(constraints, success, error);
+            };
+            console.log('🔧 Legacy getUserMedia monitoring injected');
+        }
+        """
+        
+        try:
+            self.runJavaScript(js_code)
+            logger.info("🔧 JavaScript media monitoring injected")
+        except Exception as e:
+            logger.debug(f"Failed to inject JavaScript: {e}")
+    
+    def _pre_grant_google_meet_permissions(self):
+        """Pre-grant media permissions for Google Meet to avoid stuck requests."""
+        try:
+            from PyQt6.QtCore import QUrl
+            
+            # Get the current URL
+            current_url = self.url()
+            logger.info(f"🎯 Pre-granting permissions for Google Meet: {current_url.toString()}")
+            
+            # Pre-grant all media features for this Google Meet URL
+            media_features = [
+                QWebEnginePage.Feature.MediaAudioCapture,
+                QWebEnginePage.Feature.MediaVideoCapture, 
+                QWebEnginePage.Feature.MediaAudioVideoCapture
+            ]
+            
+            for feature in media_features:
+                try:
+                    self.setFeaturePermission(current_url, feature, QWebEnginePage.PermissionPolicy.PermissionGrantedByUser)
+                    logger.info(f"✅ Pre-granted {feature} for Google Meet")
+                except Exception as e:
+                    logger.debug(f"Could not pre-grant {feature}: {e}")
+                    
+            # Also inject JavaScript to clear any stuck permission requests
+            clear_js = """
+            // Try to clear any stuck permission requests
+            if (window.navigator && window.navigator.permissions) {
+                window.navigator.permissions.query({name: 'camera'}).then(function(result) {
+                    console.log('Camera permission status:', result.state);
+                });
+                window.navigator.permissions.query({name: 'microphone'}).then(function(result) {
+                    console.log('Microphone permission status:', result.state);
+                });
+            }
+            
+            // Force a fresh getUserMedia call to reset state
+            console.log('🔧 Attempting to clear stuck permissions...');
+            """
+            
+            self.runJavaScript(clear_js)
+            logger.debug("🔧 Injected permission clearing JavaScript")
+            
+        except Exception as e:
+            logger.error(f"Error pre-granting Google Meet permissions: {e}")
+    
+    def handle_feature_permission_request(self, securityOrigin, feature):
+        """Handle feature permission requests using the correct PyQt pattern."""
+        logger.debug(f"🎯 FEATURE PERMISSION REQUESTED!")
+        logger.debug(f"🌐 Security Origin: {securityOrigin.toString()}")
+        logger.debug(f"🎥 Feature: {feature}")
+        logger.debug(f"📋 Feature Type: {type(feature)}")
+        
+        # List available features on first call
+        if not hasattr(self, '_features_listed'):
+            logger.debug("=== Available Features ===")
+            for attr in sorted(dir(QWebEnginePage.Feature)):
+                if not attr.startswith('_'):
+                    feature_value = getattr(QWebEnginePage.Feature, attr)
+                    logger.debug(f"Feature: {attr} = {feature_value}")
+            self._features_listed = True
+        
+        # Auto-grant media permissions following the PyQt5/6 pattern
+        try:
+            if feature in (QWebEnginePage.Feature.MediaAudioCapture, 
+                          QWebEnginePage.Feature.MediaVideoCapture, 
+                          QWebEnginePage.Feature.MediaAudioVideoCapture):
+                self.setFeaturePermission(securityOrigin, feature, QWebEnginePage.PermissionPolicy.PermissionGrantedByUser)
+                logger.info(f"✅ AUTO-GRANTED media permission {feature} for {securityOrigin.toString()}")
+            else:
+                # For non-media features, still grant them for testing
+                self.setFeaturePermission(securityOrigin, feature, QWebEnginePage.PermissionPolicy.PermissionGrantedByUser)
+                logger.info(f"✅ AUTO-GRANTED other permission {feature} for {securityOrigin.toString()}")
+        except Exception as e:
+            logger.error(f"❌ Error granting feature permission: {e}")
 
 
 class CertificateDetailsDialog(QDialog):
@@ -1747,7 +2582,7 @@ class KeePassXCWebEngineView(QWebEngineView):
         bridge_script_path = Path(__file__).parent / "keepassxc_bridge.js"
         logger.debug(f"Looking for bridge script at: {bridge_script_path}")
         if not bridge_script_path.exists():
-            logger.warning("KeePassXC bridge script not found")
+            logger.debug("KeePassXC bridge script not found")
             return
         
         try:
@@ -3316,6 +4151,14 @@ def setup_wayland_compatibility():
         chromium_flags.append("--disable-software-rasterizer")
     if creature_config.wayland.enable_vaapi_video_decoder:
         chromium_flags.append("--enable-features=VaapiVideoDecoder")
+    
+    # Graphics acceleration and WebGL fixes
+    chromium_flags.extend([
+        "--ignore-gpu-blocklist",
+        "--enable-gpu-rasterization",
+        "--enable-webgl",
+        "--enable-accelerated-2d-canvas"
+    ])
     
     # Only add Wayland-specific Chromium flags if we're actually on Wayland
     if is_wayland and ui_config.enable_high_dpi_scaling:

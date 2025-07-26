@@ -157,7 +157,7 @@ class CreatureConfig:
             logger.info(f"Loaded configuration with validation from: {configfile}")
         else:
             self._config = ConfigObj(str(configfile))
-            logger.warning(f"Config spec not found at {spec_path}, loaded without validation from: {configfile}")
+            logger.info(f"Config spec not found at {spec_path}, loaded without validation from: {configfile}")
 
     def __getattr__(self, name: str) -> list | str | int | float | dict:
         """Get configuration value using dot notation.

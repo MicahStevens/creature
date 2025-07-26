@@ -128,3 +128,7 @@ level = option('DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL', default='WARNING
 # theme = string
 # title_suffix = string  
 # home_page = string
+# webrtc_enabled = boolean(default=True)
+# camera_enabled = boolean(default=True)
+# microphone_enabled = boolean(default=True)
+# screen_capture_enabled = boolean(default=True)

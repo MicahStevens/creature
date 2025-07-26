@@ -150,7 +150,7 @@ class KeePassXCManager:
             
         except subprocess.TimeoutExpired:
             process.kill()
-            logger.warning("Command timed out!")
+            logger.error("Command timed out!")
             raise KeePassXCError("KeePassXC command timed out")
         except Exception as e:
             logger.error(f"Exception: {e}")
@@ -339,7 +339,7 @@ class KeePassXCManager:
             return entries
             
         except Exception as e:
-            logger.warning(f"URL search error: {e}")
+            logger.error(f"URL search error: {e}")
             return []
     
     def copy_to_clipboard(self, entry_title: str, attribute: str = 'password', 
@@ -381,7 +381,7 @@ class KeePassXCManager:
             return success
             
         except Exception as e:
-            logger.warning(f"Clipboard copy error: {e}")
+            logger.error(f"Clipboard copy error: {e}")
             return False
     
     def get_all_entries(self, master_password: str = None) -> List[str]:
