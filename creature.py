@@ -7,11 +7,12 @@ from PyQt6.QtWidgets import (QApplication, QMainWindow, QVBoxLayout,
                             QWidget, QLineEdit, QPushButton, QHBoxLayout,
                             QTabWidget, QToolBar, QStyleFactory, QMessageBox,
                             QDialog, QListWidget, QDialogButtonBox, QLabel,
-                            QListWidgetItem, QSplashScreen, QTextBrowser, QFormLayout)
+                            QListWidgetItem, QSplashScreen, QTextBrowser, QFormLayout,
+                            QMenu, QScrollArea, QInputDialog)
 from PyQt6.QtWebEngineWidgets import QWebEngineView
 from PyQt6.QtWebEngineCore import QWebEngineProfile, QWebEngineSettings, QWebEngineScript, QWebEnginePage, QWebEngineCertificateError
 from PyQt6.QtCore import QUrl, QStandardPaths, QDir, QTimer, Qt, pyqtSignal, QSize
-from PyQt6.QtGui import QAction, QPalette, QColor, QShortcut, QKeySequence, QFont, QFontDatabase, QPixmap, QIcon
+from PyQt6.QtGui import QPalette, QColor, QShortcut, QKeySequence, QFont, QFontDatabase, QPixmap, QIcon, QAction
 import json
 import re
 import urllib.parse
@@ -20,6 +21,9 @@ import tempfile
 import socket
 import ssl
 from urllib.parse import urlparse
+import requests
+import base64
+from datetime import datetime, timedelta
 from creature_config import config as creature_config
 from configobj import ConfigObj
 from validate import Validator
@@ -370,6 +374,539 @@ def parse_openssl_output(openssl_text):
     
     print(f"[SSL DEBUG] Parsed {len(cert_details)} certificate fields")
     return cert_details
+
+
+class BookmarkManager:
+    """Manages per-profile bookmarks with hierarchical organization."""
+    
+    def __init__(self, profile_name):
+        self.profile_name = profile_name
+        self.bookmarks_file = self._get_bookmarks_path()
+        self.bookmarks = self._load_bookmarks()
+        self.favicon_cache = {}
+        
+    def _get_bookmarks_path(self):
+        """Get the path to the bookmarks file for this profile."""
+        profile_dir = Path.home() / '.config' / 'creature' / 'profiles' / self.profile_name
+        profile_dir.mkdir(parents=True, exist_ok=True)
+        return profile_dir / 'bookmarks.json'
+    
+    def _load_bookmarks(self):
+        """Load bookmarks from file."""
+        if self.bookmarks_file.exists():
+            try:
+                with open(self.bookmarks_file, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    return data.get('bookmarks', [])
+            except Exception as e:
+                print(f"[BOOKMARKS] Failed to load bookmarks: {e}")
+        
+        # Return default bookmarks if file doesn't exist or loading fails
+        return self._get_default_bookmarks()
+    
+    def _get_default_bookmarks(self):
+        """Return default bookmarks for new profiles."""
+        return [
+            {
+                'type': 'bookmark',
+                'title': 'Creature Browser',
+                'url': 'https://github.com/anthropics/claude-code',
+                'favicon': None,
+                'date_added': datetime.now().isoformat()
+            },
+            {
+                'type': 'folder',
+                'title': 'Search Engines',
+                'expanded': True,
+                'children': [
+                    {
+                        'type': 'bookmark',
+                        'title': 'Google',
+                        'url': 'https://www.google.com',
+                        'favicon': None,
+                        'date_added': datetime.now().isoformat()
+                    },
+                    {
+                        'type': 'bookmark',
+                        'title': 'DuckDuckGo',
+                        'url': 'https://duckduckgo.com',
+                        'favicon': None,
+                        'date_added': datetime.now().isoformat()
+                    }
+                ]
+            }
+        ]
+    
+    def save_bookmarks(self):
+        """Save bookmarks to file."""
+        try:
+            data = {
+                'version': '1.0',
+                'last_modified': datetime.now().isoformat(),
+                'bookmarks': self.bookmarks
+            }
+            with open(self.bookmarks_file, 'w', encoding='utf-8') as f:
+                json.dump(data, f, indent=2, ensure_ascii=False)
+            print(f"[BOOKMARKS] Saved bookmarks to {self.bookmarks_file}")
+        except Exception as e:
+            print(f"[BOOKMARKS] Failed to save bookmarks: {e}")
+    
+    def add_bookmark(self, title, url, parent_folder=None):
+        """Add a new bookmark."""
+        bookmark = {
+            'type': 'bookmark',
+            'title': title,
+            'url': url,
+            'favicon': None,
+            'date_added': datetime.now().isoformat()
+        }
+        
+        if parent_folder is None:
+            self.bookmarks.append(bookmark)
+        else:
+            # Find parent folder and add bookmark
+            folder = self._find_folder(parent_folder)
+            if folder:
+                folder['children'].append(bookmark)
+        
+        self.save_bookmarks()
+        return bookmark
+    
+    def add_folder(self, title, parent_folder=None):
+        """Add a new folder."""
+        folder = {
+            'type': 'folder',
+            'title': title,
+            'expanded': True,
+            'children': [],
+            'date_added': datetime.now().isoformat()
+        }
+        
+        if parent_folder is None:
+            self.bookmarks.append(folder)
+        else:
+            parent = self._find_folder(parent_folder)
+            if parent:
+                parent['children'].append(folder)
+        
+        self.save_bookmarks()
+        return folder
+    
+    def _find_folder(self, folder_title):
+        """Find a folder by title (recursive search)."""
+        def search_items(items):
+            for item in items:
+                if item.get('type') == 'folder' and item.get('title') == folder_title:
+                    return item
+                if item.get('type') == 'folder' and 'children' in item:
+                    result = search_items(item['children'])
+                    if result:
+                        return result
+            return None
+        
+        return search_items(self.bookmarks)
+    
+    def get_flat_bookmarks(self):
+        """Get all bookmarks in a flat list (for easy iteration)."""
+        def flatten_items(items, result=None):
+            if result is None:
+                result = []
+            
+            for item in items:
+                if item.get('type') == 'bookmark':
+                    result.append(item)
+                elif item.get('type') == 'folder' and 'children' in item:
+                    flatten_items(item['children'], result)
+            
+            return result
+        
+        return flatten_items(self.bookmarks)
+
+
+class FaviconManager:
+    """Manages favicon fetching and caching."""
+    
+    def __init__(self, profile_name):
+        self.profile_name = profile_name
+        self.cache_dir = self._get_cache_dir()
+        self.session = requests.Session()
+        self.session.headers.update({
+            'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Creature Browser'
+        })
+    
+    def _get_cache_dir(self):
+        """Get the favicon cache directory for this profile."""
+        cache_dir = Path.home() / '.config' / 'creature' / 'profiles' / self.profile_name / 'favicons'
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        return cache_dir
+    
+    def get_favicon_path(self, url):
+        """Get cached favicon path or fetch it."""
+        try:
+            # Create a safe filename from the URL
+            parsed = urlparse(url)
+            domain = parsed.netloc.lower()
+            safe_name = re.sub(r'[^\w\.-]', '_', domain)
+            
+            favicon_path = self.cache_dir / f"{safe_name}.ico"
+            
+            # Return cached favicon if exists and not too old
+            if favicon_path.exists():
+                # Check if cache is less than 7 days old
+                cache_time = datetime.fromtimestamp(favicon_path.stat().st_mtime)
+                if datetime.now() - cache_time < timedelta(days=7):
+                    return str(favicon_path)
+            
+            # Try to fetch favicon
+            favicon_data = self.fetch_favicon(url)
+            if favicon_data:
+                with open(favicon_path, 'wb') as f:
+                    f.write(favicon_data)
+                print(f"[FAVICON] Cached favicon for {domain}")
+                return str(favicon_path)
+            
+        except Exception as e:
+            print(f"[FAVICON] Error getting favicon for {url}: {e}")
+        
+        return None
+    
+    def fetch_favicon(self, url):
+        """Fetch favicon from URL."""
+        try:
+            parsed = urlparse(url)
+            base_url = f"{parsed.scheme}://{parsed.netloc}"
+            
+            # Common favicon locations to try
+            favicon_urls = [
+                f"{base_url}/favicon.ico",
+                f"{base_url}/favicon.png",
+                f"{base_url}/apple-touch-icon.png",
+                f"{base_url}/apple-touch-icon-precomposed.png"
+            ]
+            
+            # Try to get favicon from HTML first
+            try:
+                response = self.session.get(url, timeout=5)
+                if response.status_code == 200:
+                    html_favicon = self._extract_favicon_from_html(response.text, base_url)
+                    if html_favicon:
+                        favicon_urls.insert(0, html_favicon)
+            except:
+                pass
+            
+            # Try each favicon URL
+            for favicon_url in favicon_urls:
+                try:
+                    response = self.session.get(favicon_url, timeout=3)
+                    if response.status_code == 200 and len(response.content) > 0:
+                        # Verify it's an image
+                        if response.headers.get('content-type', '').startswith(('image/', 'application/octet-stream')):
+                            return response.content
+                except:
+                    continue
+            
+        except Exception as e:
+            print(f"[FAVICON] Error fetching favicon: {e}")
+        
+        return None
+    
+    def _extract_favicon_from_html(self, html, base_url):
+        """Extract favicon URL from HTML."""
+        try:
+            # Simple regex to find favicon link tags
+            import re
+            
+            # Look for various favicon link tags
+            patterns = [
+                r'<link[^>]*rel=["\'](?:shortcut )?icon["\'][^>]*href=["\']([^"\']+)["\']',
+                r'<link[^>]*href=["\']([^"\']+)["\'][^>]*rel=["\'](?:shortcut )?icon["\']'
+            ]
+            
+            for pattern in patterns:
+                matches = re.findall(pattern, html, re.IGNORECASE)
+                if matches:
+                    favicon_url = matches[0]
+                    # Make absolute URL if relative
+                    if favicon_url.startswith('//'):
+                        favicon_url = f"{urlparse(base_url).scheme}:{favicon_url}"
+                    elif favicon_url.startswith('/'):
+                        favicon_url = f"{base_url}{favicon_url}"
+                    elif not favicon_url.startswith('http'):
+                        favicon_url = f"{base_url}/{favicon_url}"
+                    
+                    return favicon_url
+        except:
+            pass
+        
+        return None
+
+
+class BookmarkToolbar(QWidget):
+    """Vertical bookmark toolbar with favicon buttons."""
+    
+    def __init__(self, profile_name, parent=None):
+        super().__init__(parent)
+        self.profile_name = profile_name
+        self.bookmark_manager = BookmarkManager(profile_name)
+        self.favicon_manager = FaviconManager(profile_name)
+        
+        self.setFixedWidth(48)  # Fixed width for vertical toolbar
+        self.setStyleSheet("""
+            BookmarkToolbar {
+                background-color: #f5f5f5;
+                border-right: 1px solid #ddd;
+            }
+        """)
+        
+        # Main layout
+        self.main_layout = QVBoxLayout(self)
+        self.main_layout.setContentsMargins(4, 4, 4, 4)
+        self.main_layout.setSpacing(2)
+        
+        # Scroll area for bookmarks
+        self.scroll_area = QScrollArea()
+        self.scroll_area.setWidgetResizable(True)
+        self.scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self.scroll_area.setStyleSheet("QScrollArea { border: none; background-color: transparent; }")
+        
+        # Content widget for bookmarks
+        self.content_widget = QWidget()
+        self.content_layout = QVBoxLayout(self.content_widget)
+        self.content_layout.setContentsMargins(0, 0, 0, 0)
+        self.content_layout.setSpacing(2)
+        
+        self.scroll_area.setWidget(self.content_widget)
+        self.main_layout.addWidget(self.scroll_area)
+        
+        # Add bookmark button at bottom
+        self.add_button = QPushButton("+")
+        self.add_button.setFixedSize(36, 36)
+        self.add_button.setToolTip("Add bookmark")
+        self.add_button.setStyleSheet("""
+            QPushButton {
+                border: 1px solid #ccc;
+                border-radius: 4px;
+                background-color: #fff;
+                color: #666;
+                font-size: 18px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #e8e8e8;
+                border-color: #999;
+            }
+            QPushButton:pressed {
+                background-color: #ddd;
+            }
+        """)
+        self.add_button.clicked.connect(self.add_bookmark_dialog)
+        self.main_layout.addWidget(self.add_button)
+        
+        # Spacer to push add button to bottom
+        self.main_layout.addStretch()
+        
+        # Load and display bookmarks
+        self.refresh_bookmarks()
+    
+    def refresh_bookmarks(self):
+        """Refresh the bookmark display."""
+        # Clear existing bookmark widgets
+        for i in reversed(range(self.content_layout.count())):
+            child = self.content_layout.itemAt(i).widget()
+            if child:
+                child.setParent(None)
+        
+        # Add bookmark widgets
+        self._add_bookmark_items(self.bookmark_manager.bookmarks)
+        
+        # Add stretch at end
+        self.content_layout.addStretch()
+    
+    def _add_bookmark_items(self, items, indent_level=0):
+        """Recursively add bookmark items to the layout."""
+        for item in items:
+            if item.get('type') == 'folder':
+                # Add folder header (if not at root level)
+                if indent_level > 0:
+                    folder_widget = self._create_folder_widget(item, indent_level)
+                    self.content_layout.addWidget(folder_widget)
+                
+                # Add folder contents
+                if item.get('expanded', True) and 'children' in item:
+                    self._add_bookmark_items(item['children'], indent_level + 1)
+                    
+            elif item.get('type') == 'bookmark':
+                bookmark_widget = self._create_bookmark_widget(item, indent_level)
+                self.content_layout.addWidget(bookmark_widget)
+    
+    def _create_bookmark_widget(self, bookmark, indent_level=0):
+        """Create a bookmark button widget."""
+        button = QPushButton()
+        button.setFixedSize(36, 36)
+        button.setToolTip(f"{bookmark.get('title', 'Untitled')}\n{bookmark.get('url', '')}")
+        
+        # Set favicon icon
+        favicon_path = self.favicon_manager.get_favicon_path(bookmark.get('url', ''))
+        if favicon_path and Path(favicon_path).exists():
+            icon = QIcon(favicon_path)
+            button.setIcon(icon)
+            button.setIconSize(QSize(24, 24))
+        else:
+            # Use first letter of title as fallback
+            title = bookmark.get('title', '?')
+            button.setText(title[0].upper())
+            button.setStyleSheet("""
+                QPushButton {
+                    border: 1px solid #ccc;
+                    border-radius: 4px;
+                    background-color: #fff;
+                    color: #666;
+                    font-size: 14px;
+                    font-weight: bold;
+                }
+                QPushButton:hover {
+                    background-color: #e8f4fd;
+                    border-color: #0078d4;
+                }
+                QPushButton:pressed {
+                    background-color: #cde7f7;
+                }
+            """)
+        
+        # Connect click to navigation
+        button.clicked.connect(lambda: self.navigate_to_bookmark(bookmark))
+        
+        # Add right-click context menu
+        button.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        button.customContextMenuRequested.connect(
+            lambda pos: self.show_bookmark_context_menu(bookmark, button, pos)
+        )
+        
+        return button
+    
+    def _create_folder_widget(self, folder, indent_level):
+        """Create a folder separator widget."""
+        label = QLabel(folder.get('title', 'Folder'))
+        label.setStyleSheet("""
+            QLabel {
+                color: #666;
+                font-size: 10px;
+                font-weight: bold;
+                padding: 2px;
+                background-color: #eee;
+                border-radius: 2px;
+            }
+        """)
+        label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        label.setFixedHeight(16)
+        return label
+    
+    def navigate_to_bookmark(self, bookmark):
+        """Navigate to bookmark URL."""
+        url = bookmark.get('url')
+        if url:
+            # Find parent browser tab and navigate
+            parent_tab = self.parent()
+            while parent_tab and not hasattr(parent_tab, 'web_view'):
+                parent_tab = parent_tab.parent()
+            
+            if parent_tab and hasattr(parent_tab, 'web_view'):
+                parent_tab.web_view.load(QUrl(url))
+    
+    def show_bookmark_context_menu(self, bookmark, button, pos):
+        """Show context menu for bookmark."""
+        menu = QMenu(self)
+        
+        # Open in new tab action
+        open_action = QAction("Open", self)
+        open_action.triggered.connect(lambda: self.navigate_to_bookmark(bookmark))
+        menu.addAction(open_action)
+        
+        menu.addSeparator()
+        
+        # Edit bookmark action
+        edit_action = QAction("Edit", self)
+        edit_action.triggered.connect(lambda: self.edit_bookmark_dialog(bookmark))
+        menu.addAction(edit_action)
+        
+        # Delete bookmark action
+        delete_action = QAction("Delete", self)
+        delete_action.triggered.connect(lambda: self.delete_bookmark(bookmark))
+        menu.addAction(delete_action)
+        
+        # Show menu
+        menu.exec(button.mapToGlobal(pos))
+    
+    def add_bookmark_dialog(self):
+        """Show add bookmark dialog."""
+        # Get current URL from browser if available
+        current_url = ""
+        current_title = ""
+        
+        parent_tab = self.parent()
+        while parent_tab and not hasattr(parent_tab, 'web_view'):
+            parent_tab = parent_tab.parent()
+        
+        if parent_tab and hasattr(parent_tab, 'web_view'):
+            current_url = parent_tab.web_view.url().toString()
+            current_title = parent_tab.web_view.title()
+        
+        # Simple input dialogs for now
+        from PyQt6.QtWidgets import QInputDialog
+        
+        title, ok1 = QInputDialog.getText(self, "Add Bookmark", "Title:", text=current_title)
+        if ok1 and title:
+            url, ok2 = QInputDialog.getText(self, "Add Bookmark", "URL:", text=current_url)
+            if ok2 and url:
+                self.bookmark_manager.add_bookmark(title, url)
+                self.refresh_bookmarks()
+    
+    def edit_bookmark_dialog(self, bookmark):
+        """Show edit bookmark dialog."""
+        from PyQt6.QtWidgets import QInputDialog
+        
+        title, ok1 = QInputDialog.getText(
+            self, "Edit Bookmark", "Title:", text=bookmark.get('title', '')
+        )
+        if ok1:
+            url, ok2 = QInputDialog.getText(
+                self, "Edit Bookmark", "URL:", text=bookmark.get('url', '')
+            )
+            if ok2:
+                bookmark['title'] = title
+                bookmark['url'] = url
+                self.bookmark_manager.save_bookmarks()
+                self.refresh_bookmarks()
+    
+    def delete_bookmark(self, bookmark):
+        """Delete a bookmark."""
+        from PyQt6.QtWidgets import QMessageBox
+        
+        reply = QMessageBox.question(
+            self, "Delete Bookmark", 
+            f"Delete bookmark '{bookmark.get('title', 'Untitled')}'?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+        
+        if reply == QMessageBox.StandardButton.Yes:
+            self._remove_bookmark_from_data(bookmark)
+            self.bookmark_manager.save_bookmarks()
+            self.refresh_bookmarks()
+    
+    def _remove_bookmark_from_data(self, bookmark_to_remove):
+        """Remove bookmark from the data structure."""
+        def remove_from_items(items):
+            for i, item in enumerate(items):
+                if item is bookmark_to_remove:
+                    del items[i]
+                    return True
+                elif item.get('type') == 'folder' and 'children' in item:
+                    if remove_from_items(item['children']):
+                        return True
+            return False
+        
+        remove_from_items(self.bookmark_manager.bookmarks)
 
 
 class ProfileManager:
@@ -1975,11 +2512,12 @@ class ProfileSelectionDialog(QDialog):
         super().accept()
 
 class BrowserTab(QWidget):
-    def __init__(self, profile, url=None):
+    def __init__(self, profile, url=None, profile_name=None):
         super().__init__()
         if url is None:
             url = creature_config.general.home_page
         self.profile = profile
+        self.profile_name = profile_name or "default"
         layout = QVBoxLayout(self)
 
         # Navigation bar
@@ -2033,8 +2571,19 @@ class BrowserTab(QWidget):
             'revocation_checked': False,
             'revocation_status': None
         }
-
-        layout.addWidget(self.web_view)
+        
+        # Create horizontal layout for bookmark toolbar and web view
+        content_layout = QHBoxLayout()
+        
+        # Add bookmark toolbar on the left
+        self.bookmark_toolbar = BookmarkToolbar(self.profile_name, self)
+        content_layout.addWidget(self.bookmark_toolbar)
+        
+        # Add web view on the right
+        content_layout.addWidget(self.web_view)
+        
+        # Add the content layout to the main layout
+        layout.addLayout(content_layout)
 
         # Connect signals
         self.back_btn.clicked.connect(self.web_view.back)
@@ -2231,7 +2780,7 @@ class CreatureBrowser(QMainWindow):
             self.setup_tab_shortcuts()
         else:
             # Single tab mode for window manager
-            self.single_tab = BrowserTab(self.profile)
+            self.single_tab = BrowserTab(self.profile, profile_name=self.profile_name)
             self.setCentralWidget(self.single_tab)
 
         # Set up hamburger menu (replaces traditional menu bar)
@@ -2410,7 +2959,7 @@ class CreatureBrowser(QMainWindow):
             self.new_window(url)
             return
 
-        tab = BrowserTab(self.profile, url)
+        tab = BrowserTab(self.profile, url, profile_name=self.profile_name)
         index = self.tabs.addTab(tab, "New Tab")
         self.tabs.setCurrentIndex(index)
 
