@@ -12,6 +12,10 @@ from urllib.parse import urlparse
 from pathlib import Path
 from typing import List, Dict, Optional, Tuple
 from creature_config import config as creature_config
+import logging
+
+# Create logger for this module
+logger = logging.getLogger(__name__)
 
 
 class KeePassXCError(Exception):
@@ -67,7 +71,7 @@ class KeePassXCManager:
         if not path:
             return ""
         expanded = str(Path(path).expanduser().resolve())
-        print(f"[KeePassXC DEBUG] Path expansion: '{path}' -> '{expanded}'")
+        logger.debug(f"Path expansion: '{path}' -> '{expanded}'")
         return expanded
     
     def _run_cli_command(self, command: List[str], master_password: str = None) -> Tuple[bool, str, str]:
@@ -101,14 +105,14 @@ class KeePassXCManager:
             key_file_path = self._expand_path(self.config.key_file)
             if os.path.exists(key_file_path):
                 full_command.extend(['--key-file', key_file_path])
-                print(f"[KeePassXC DEBUG] Using key file: {key_file_path}")
+                logger.debug(f"Using key file: {key_file_path}")
         
         # Debug output
-        print(f"[KeePassXC DEBUG] Executing command: {' '.join(full_command[:-1])} <database>")
-        print(f"[KeePassXC DEBUG] Database path: {database_path}")
-        print(f"[KeePassXC DEBUG] Password provided: {'Yes' if master_password else 'No'}")
+        logger.debug(f"Executing command: {' '.join(full_command[:-1])} <database>")
+        logger.debug(f"Database path: {database_path}")
+        logger.debug(f"Password provided: {'Yes' if master_password else 'No'}")
         if master_password:
-            print(f"[KeePassXC DEBUG] Password length: {len(master_password)} characters")
+            logger.debug(f"Password length: {len(master_password)} characters")
         
         try:
             # Remove quiet mode for debugging
@@ -135,21 +139,21 @@ class KeePassXCManager:
             success = process.returncode == 0
             
             # Debug output
-            print(f"[KeePassXC DEBUG] Return code: {process.returncode}")
-            print(f"[KeePassXC DEBUG] Success: {success}")
+            logger.debug(f"Return code: {process.returncode}")
+            logger.debug(f"Success: {success}")
             if stdout:
-                print(f"[KeePassXC DEBUG] STDOUT: {stdout}")
+                logger.debug(f"STDOUT: {stdout}")
             if stderr:
-                print(f"[KeePassXC DEBUG] STDERR: {stderr}")
+                logger.debug(f"STDERR: {stderr}")
             
             return success, stdout.strip(), stderr.strip()
             
         except subprocess.TimeoutExpired:
             process.kill()
-            print("[KeePassXC DEBUG] Command timed out!")
+            logger.warning("Command timed out!")
             raise KeePassXCError("KeePassXC command timed out")
         except Exception as e:
-            print(f"[KeePassXC DEBUG] Exception: {e}")
+            logger.error(f"Exception: {e}")
             raise KeePassXCError(f"Failed to run KeePassXC command: {e}")
     
     def test_database_access(self, master_password: str) -> bool:
@@ -162,21 +166,21 @@ class KeePassXCManager:
         Returns:
             True if database can be accessed
         """
-        print(f"[KeePassXC DEBUG] Testing database access...")
+        logger.debug(f"Testing database access...")
         try:
             success, stdout, stderr = self._run_cli_command(['ls'], master_password)
             if success:
-                print(f"[KeePassXC DEBUG] Database access successful!")
+                logger.debug(f"Database access successful!")
                 self._database_unlocked = True
                 self._last_master_password = master_password
                 return True
             else:
-                print(f"[KeePassXC DEBUG] Database access failed!")
+                logger.debug(f"Database access failed!")
                 if stderr and "invalid credentials" in stderr.lower():
-                    print(f"[KeePassXC DEBUG] Invalid credentials detected")
+                    logger.debug(f"Invalid credentials detected")
                 return False
         except KeePassXCError as e:
-            print(f"[KeePassXC DEBUG] Exception during database access test: {e}")
+            logger.error(f"Exception during database access test: {e}")
             return False
     
     def search_entries(self, search_term: str, master_password: str = None) -> List[KeePassXCEntry]:
@@ -335,7 +339,7 @@ class KeePassXCManager:
             return entries
             
         except Exception as e:
-            print(f"URL search error: {e}")
+            logger.warning(f"URL search error: {e}")
             return []
     
     def copy_to_clipboard(self, entry_title: str, attribute: str = 'password', 
@@ -377,7 +381,7 @@ class KeePassXCManager:
             return success
             
         except Exception as e:
-            print(f"Clipboard copy error: {e}")
+            logger.warning(f"Clipboard copy error: {e}")
             return False
     
     def get_all_entries(self, master_password: str = None) -> List[str]:

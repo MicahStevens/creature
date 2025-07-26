@@ -28,11 +28,28 @@ from creature_config import config as creature_config
 from configobj import ConfigObj
 from validate import Validator
 from keepassxc_manager import keepass_manager, KeePassXCError
+import logging
 
 # Application constants
 CREATURE_VERSION = "0.1.0"
 CREATURE_AUTHOR = "micah@benchtop.tech"
 CREATURE_LICENSE = "MIT"
+
+# Configure logging
+def setup_logging():
+    """Configure logging based on config settings."""
+    log_level = getattr(logging, creature_config.logging.level, logging.WARNING)
+    logging.basicConfig(
+        level=log_level,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S'
+    )
+
+# Set up logging early
+setup_logging()
+
+# Create module logger
+logger = logging.getLogger(__name__)
 
 def process_url_or_search(input_text):
     """Process user input to determine if it's a URL or search query.
@@ -87,7 +104,7 @@ def fetch_certificate_from_url(url_string):
         hostname = parsed_url.hostname
         port = parsed_url.port or 443
         
-        print(f"[SSL DEBUG] Fetching certificate for {hostname}:{port}")
+        logger.debug(f"Fetching certificate for {hostname}:{port}")
         
         # Create SSL context
         context = ssl.create_default_context()
@@ -103,7 +120,7 @@ def fetch_certificate_from_url(url_string):
                 return cert_der, cert_info
                 
     except Exception as e:
-        print(f"[SSL DEBUG] Failed to fetch certificate: {e}")
+        logger.debug(f"Failed to fetch certificate: {e}")
         return None, str(e)
 
 
@@ -116,11 +133,11 @@ def export_certificate_to_file(cert_der, hostname):
         with os.fdopen(temp_fd, 'wb') as temp_file:
             temp_file.write(cert_der)
         
-        print(f"[SSL DEBUG] Certificate exported to: {temp_path}")
+        logger.debug(f"Certificate exported to: {temp_path}")
         return temp_path
         
     except Exception as e:
-        print(f"[SSL DEBUG] Failed to export certificate: {e}")
+        logger.debug(f"Failed to export certificate: {e}")
         return None
 
 
@@ -130,12 +147,12 @@ def check_openssl_available():
         result = subprocess.run(['openssl', 'version'], 
                               capture_output=True, text=True, timeout=5)
         if result.returncode == 0:
-            print(f"[SSL DEBUG] OpenSSL available: {result.stdout.strip()}")
+            logger.debug(f"OpenSSL available: {result.stdout.strip()}")
             return True
     except (FileNotFoundError, subprocess.TimeoutExpired):
         pass
     
-    print("[SSL DEBUG] OpenSSL not available")
+    logger.debug("OpenSSL not available")
     return False
 
 
@@ -156,10 +173,10 @@ def parse_certificate_with_openssl(cert_der):
             if result.returncode == 0:
                 # Parse the OpenSSL output
                 cert_details = parse_openssl_output(result.stdout)
-                print(f"[SSL DEBUG] Parsed certificate with OpenSSL: {len(cert_details)} fields")
+                logger.debug(f"Parsed certificate with OpenSSL: {len(cert_details)} fields")
                 return cert_details
             else:
-                print(f"[SSL DEBUG] OpenSSL parsing failed: {result.stderr}")
+                logger.debug(f"OpenSSL parsing failed: {result.stderr}")
                 return None
                 
         finally:
@@ -170,7 +187,7 @@ def parse_certificate_with_openssl(cert_der):
                 pass
                 
     except Exception as e:
-        print(f"[SSL DEBUG] Failed to parse with OpenSSL: {e}")
+        logger.debug(f"Failed to parse with OpenSSL: {e}")
         return None
 
 
@@ -191,10 +208,10 @@ def check_certificate_revocation(cert_der, hostname):
             temp_file.write(cert_der)
         
         try:
-            print(f"[SSL DEBUG] Checking certificate revocation for {hostname}")
+            logger.debug(f"Checking certificate revocation for {hostname}")
             
             # First try OCSP check using OpenSSL
-            print("[SSL DEBUG] Attempting OCSP check...")
+            logger.debug("Attempting OCSP check...")
             ocsp_result = check_ocsp_status(temp_path, hostname)
             
             if ocsp_result['checked']:
@@ -202,7 +219,7 @@ def check_certificate_revocation(cert_der, hostname):
                 return revocation_info
             
             # If OCSP fails, try CRL check
-            print("[SSL DEBUG] OCSP failed, attempting CRL check...")
+            logger.debug("OCSP failed, attempting CRL check...")
             crl_result = check_crl_status(temp_path)
             
             if crl_result['checked']:
@@ -220,7 +237,7 @@ def check_certificate_revocation(cert_der, hostname):
                 pass
                 
     except Exception as e:
-        print(f"[SSL DEBUG] Exception in revocation check: {e}")
+        logger.debug(f"Exception in revocation check: {e}")
         revocation_info['error'] = str(e)
     
     return revocation_info
@@ -245,7 +262,7 @@ def check_ocsp_status(cert_path, hostname):
         
         if result.returncode == 0 and result.stdout.strip():
             ocsp_url = result.stdout.strip()
-            print(f"[SSL DEBUG] Found OCSP URL: {ocsp_url}")
+            logger.debug(f"Found OCSP URL: {ocsp_url}")
             
             # For now, we'll indicate that OCSP is available but not perform the full check
             # Full OCSP checking requires the issuer certificate and is complex
@@ -257,7 +274,7 @@ def check_ocsp_status(cert_path, hostname):
             ocsp_info['error'] = 'No OCSP URL found in certificate'
             
     except Exception as e:
-        print(f"[SSL DEBUG] OCSP check failed: {e}")
+        logger.debug(f"OCSP check failed: {e}")
         ocsp_info['error'] = str(e)
     
     return ocsp_info
@@ -299,7 +316,7 @@ def check_crl_status(cert_path):
                         in_crl_section = False
                 
                 if crl_urls:
-                    print(f"[SSL DEBUG] Found CRL URLs: {crl_urls}")
+                    logger.debug(f"Found CRL URLs: {crl_urls}")
                     crl_info['status'] = f'CRL available but not checked (found {len(crl_urls)} distribution points)'
                     crl_info['checked'] = True
                     crl_info['crl_urls'] = crl_urls
@@ -311,7 +328,7 @@ def check_crl_status(cert_path):
             crl_info['error'] = f'Failed to read certificate: {result.stderr}'
             
     except Exception as e:
-        print(f"[SSL DEBUG] CRL check failed: {e}")
+        logger.debug(f"CRL check failed: {e}")
         crl_info['error'] = str(e)
     
     return crl_info
@@ -319,7 +336,7 @@ def check_crl_status(cert_path):
 
 def parse_openssl_output(openssl_text):
     """Parse OpenSSL x509 text output into structured data."""
-    print(f"[SSL DEBUG] Parsing OpenSSL output, length: {len(openssl_text)}")
+    logger.debug(f"Parsing OpenSSL output, length: {len(openssl_text)}")
     
     cert_details = {}
     lines = openssl_text.split('\n')
@@ -372,7 +389,7 @@ def parse_openssl_output(openssl_text):
                     dns_entries.append(dns_name)
             cert_details['subject_alt_names'].extend(dns_entries)
     
-    print(f"[SSL DEBUG] Parsed {len(cert_details)} certificate fields")
+    logger.debug(f"Parsed {len(cert_details)} certificate fields")
     return cert_details
 
 
@@ -399,7 +416,7 @@ class BookmarkManager:
                     data = json.load(f)
                     return data.get('bookmarks', [])
             except Exception as e:
-                print(f"[BOOKMARKS] Failed to load bookmarks: {e}")
+                logger.warning(f"Failed to load bookmarks: {e}")
         
         # Return default bookmarks if file doesn't exist or loading fails
         return self._get_default_bookmarks()
@@ -447,9 +464,9 @@ class BookmarkManager:
             }
             with open(self.bookmarks_file, 'w', encoding='utf-8') as f:
                 json.dump(data, f, indent=2, ensure_ascii=False)
-            print(f"[BOOKMARKS] Saved bookmarks to {self.bookmarks_file}")
+            logger.info(f"Saved bookmarks to {self.bookmarks_file}")
         except Exception as e:
-            print(f"[BOOKMARKS] Failed to save bookmarks: {e}")
+            logger.error(f"Failed to save bookmarks: {e}")
     
     def add_bookmark(self, title, url, parent_folder=None):
         """Add a new bookmark."""
@@ -562,11 +579,11 @@ class FaviconManager:
             if favicon_data:
                 with open(favicon_path, 'wb') as f:
                     f.write(favicon_data)
-                print(f"[FAVICON] Cached favicon for {domain}")
+                logger.debug(f"Cached favicon for {domain}")
                 return str(favicon_path)
             
         except Exception as e:
-            print(f"[FAVICON] Error getting favicon for {url}: {e}")
+            logger.warning(f"Error getting favicon for {url}: {e}")
         
         return None
     
@@ -606,7 +623,7 @@ class FaviconManager:
                     continue
             
         except Exception as e:
-            print(f"[FAVICON] Error fetching favicon: {e}")
+            logger.warning(f"Error fetching favicon: {e}")
         
         return None
     
@@ -663,7 +680,7 @@ class BookmarkToolbar(QWidget):
         self.colors = theme.get('colors', {}) if theme else {}
         
         # Debug information
-        print(f"BookmarkToolbar: Found theme '{current_theme}', window_bg: {self.colors.get('window_bg', 'NOT_FOUND')}, toolbar_bg: {self.colors.get('toolbar_bg', 'NOT_FOUND')}")
+        logger.debug(f"BookmarkToolbar: Found theme '{current_theme}', window_bg: {self.colors.get('window_bg', 'NOT_FOUND')}, toolbar_bg: {self.colors.get('toolbar_bg', 'NOT_FOUND')}")
         
         # Apply themed styles
         self.setStyleSheet(f"""
@@ -737,7 +754,7 @@ class BookmarkToolbar(QWidget):
         self.colors = theme.get('colors', {}) if theme else {}
         
         # Debug information
-        print(f"BookmarkToolbar.refresh_theme: Found theme '{current_theme}', window_bg: {self.colors.get('window_bg', 'NOT_FOUND')}, toolbar_bg: {self.colors.get('toolbar_bg', 'NOT_FOUND')}")
+        logger.debug(f"BookmarkToolbar.refresh_theme: Found theme '{current_theme}', window_bg: {self.colors.get('window_bg', 'NOT_FOUND')}, toolbar_bg: {self.colors.get('toolbar_bg', 'NOT_FOUND')}")
         
         # Re-apply themed styles
         self.setStyleSheet(f"""
@@ -1021,7 +1038,7 @@ class ThemeManager:
                 theme_name = theme_file.stem
                 self.themes[theme_name] = theme_config
             except Exception as e:
-                print(f"Failed to load theme {theme_file}: {e}")
+                logger.error(f"Failed to load theme {theme_file}: {e}")
     
     def get_theme_names(self):
         """Get list of available theme names."""
@@ -1338,7 +1355,7 @@ class SSLAwarePage(QWebEnginePage):
     
     def certificateError(self, error):
         """Handle SSL certificate errors and extract certificate information."""
-        print(f"[SSL DEBUG] Certificate error detected: {error.description()}")
+        logger.debug(f"Certificate error detected: {error.description()}")
         
         cert_info = {
             'error_type': error.error(),
@@ -1350,10 +1367,10 @@ class SSLAwarePage(QWebEnginePage):
         
         # Extract certificate details from chain
         cert_chain = error.certificateChain()
-        print(f"[SSL DEBUG] Certificate chain length: {len(cert_chain)}")
+        logger.debug(f"Certificate chain length: {len(cert_chain)}")
         
         for i, cert in enumerate(cert_chain):
-            print(f"[SSL DEBUG] Processing certificate {i+1}")
+            logger.debug(f"Processing certificate {i+1}")
             cert_details = {
                 'subject': cert.subjectDisplayName(),
                 'issuer': cert.issuerDisplayName(),
@@ -1364,7 +1381,7 @@ class SSLAwarePage(QWebEnginePage):
                 'version': str(cert.version()) if hasattr(cert, 'version') else 'N/A'
             }
             cert_info['certificate_chain'].append(cert_details)
-            print(f"[SSL DEBUG] Certificate {i+1} subject: {cert_details['subject']}")
+            logger.debug(f"Certificate {i+1} subject: {cert_details['subject']}")
         
         # Update SSL status
         self.ssl_info.update({
@@ -1373,7 +1390,7 @@ class SSLAwarePage(QWebEnginePage):
             'errors': [cert_info]
         })
         
-        print(f"[SSL DEBUG] Emitting SSL status: {self.ssl_info}")
+        logger.debug(f"Emitting SSL status: {self.ssl_info}")
         self.sslStatusChanged.emit(self.ssl_info)
         
         # Return True to accept certificate (override error) or False to reject
@@ -1499,7 +1516,7 @@ class CertificateDetailsDialog(QDialog):
     
     def add_detailed_cert_info(self, layout):
         """Add detailed certificate information if available."""
-        print("[SSL DEBUG] Fetching detailed certificate information...")
+        logger.debug("Fetching detailed certificate information...")
         
         # Get current URL from parent
         parent_tab = self.parent()
@@ -1507,11 +1524,11 @@ class CertificateDetailsDialog(QDialog):
             parent_tab = parent_tab.parent()
         
         if not parent_tab:
-            print("[SSL DEBUG] Could not find parent tab with web_view")
+            logger.debug("Could not find parent tab with web_view")
             return
         
         current_url = parent_tab.web_view.url().toString()
-        print(f"[SSL DEBUG] Current URL: {current_url}")
+        logger.debug(f"Current URL: {current_url}")
         
         # Check if OpenSSL is available for detailed parsing
         openssl_available = check_openssl_available()
@@ -1602,11 +1619,11 @@ class CertificateDetailsDialog(QDialog):
                         
                         if fields_added > 0:
                             layout.addRow(cert_group)
-                            print(f"[SSL DEBUG] Added {fields_added} certificate fields to dialog")
+                            logger.debug(f"Added {fields_added} certificate fields to dialog")
                             return
                         
             except Exception as e:
-                print(f"[SSL DEBUG] Exception in detailed cert info: {e}")
+                logger.debug(f"Exception in detailed cert info: {e}")
         
         # Fallback message
         fallback_msg = "Detailed certificate information "
@@ -1723,22 +1740,22 @@ class KeePassXCWebEngineView(QWebEngineView):
     def _inject_bridge_script(self):
         """Inject the KeePassXC bridge JavaScript into all pages."""
         if not keepass_manager.enabled:
-            print("[KeePassXC DEBUG] Bridge injection skipped - KeePassXC disabled")
+            logger.debug("Bridge injection skipped - KeePassXC disabled")
             return
         
         # Read the bridge script
         bridge_script_path = Path(__file__).parent / "keepassxc_bridge.js"
-        print(f"[KeePassXC DEBUG] Looking for bridge script at: {bridge_script_path}")
+        logger.debug(f"Looking for bridge script at: {bridge_script_path}")
         if not bridge_script_path.exists():
-            print("[KeePassXC DEBUG] Warning: KeePassXC bridge script not found")
+            logger.warning("KeePassXC bridge script not found")
             return
         
         try:
             with open(bridge_script_path, 'r', encoding='utf-8') as f:
                 bridge_code = f.read()
-            print(f"[KeePassXC DEBUG] Bridge script loaded, {len(bridge_code)} characters")
+            logger.debug(f"Bridge script loaded, {len(bridge_code)} characters")
         except Exception as e:
-            print(f"[KeePassXC DEBUG] Failed to read KeePassXC bridge script: {e}")
+            logger.error(f"Failed to read KeePassXC bridge script: {e}")
             return
         
         # Create and inject the script
@@ -1750,7 +1767,7 @@ class KeePassXCWebEngineView(QWebEngineView):
         script.setRunsOnSubFrames(True)
         
         self.page().scripts().insert(script)
-        print("[KeePassXC DEBUG] Bridge script injected successfully")
+        logger.debug("Bridge script injected successfully")
     
     def contextMenuEvent(self, event):
         """Override context menu to add KeePassXC options."""
@@ -1943,7 +1960,7 @@ class KeePassXCWebEngineView(QWebEngineView):
         }}
         """
         
-        self.page().runJavaScript(js_code, lambda result: print(f"[KeePassXC DEBUG] Password fill result: {result}"))
+        self.page().runJavaScript(js_code, lambda result: logger.debug(f"Password fill result: {result}"))
     
     def _fill_username(self, pos):
         """Fill username into the currently focused field."""
@@ -2024,7 +2041,7 @@ class KeePassXCWebEngineView(QWebEngineView):
         }}
         """
         
-        self.page().runJavaScript(js_code, lambda result: print(f"[KeePassXC DEBUG] Username fill result: {result}"))
+        self.page().runJavaScript(js_code, lambda result: logger.debug(f"Username fill result: {result}"))
     
     def _fill_generic_field(self, pos):
         """Fill generic field - let user choose what to fill."""
@@ -2119,7 +2136,7 @@ class KeePassXCWebEngineView(QWebEngineView):
                     error_msg += f"\nErrors: {', '.join(result['errors'])}"
                 QMessageBox.warning(self, "Error", error_msg)
         else:
-            print(f"Form fill result: {result}")
+            logger.debug(f"Form fill result: {result}")
     
     def _search_entries(self):
         """Show dialog to search and select entries."""
@@ -2810,14 +2827,14 @@ class BrowserTab(QWidget):
         is_secure = url.scheme().lower() == 'https'
         self.ssl_status['is_secure'] = is_secure
         
-        print(f"[SSL DEBUG] URL changed to: {url.toString()}, is_secure: {is_secure}")
+        logger.debug(f"URL changed to: {url.toString()}, is_secure: {is_secure}")
         
         # Update SSL indicator for URL scheme changes
         self.update_ssl_indicator()
     
     def on_ssl_status_changed(self, ssl_info):
         """Handle SSL status changes from the SSL-aware page."""
-        print(f"[SSL DEBUG] SSL status changed: {ssl_info}")
+        logger.debug(f"SSL status changed: {ssl_info}")
         self.ssl_status.update(ssl_info)
         self.update_ssl_indicator()
     
@@ -2881,7 +2898,7 @@ class BrowserTab(QWidget):
     
     def show_certificate_details(self):
         """Show certificate details dialog when SSL indicator is clicked."""
-        print(f"[SSL DEBUG] Current SSL status: {self.ssl_status}")  # Debug print
+        logger.debug(f"Current SSL status: {self.ssl_status}")
         dialog = CertificateDetailsDialog(self.ssl_status, self)
         dialog.exec()
 

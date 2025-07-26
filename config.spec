@@ -117,6 +117,10 @@ show_context_menu = boolean(default=True)
 # Clipboard timeout in seconds when copying credentials
 clip_timeout = integer(min=0, max=300, default=10)
 
+[logging]
+# Log level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
+level = option('DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL', default='WARNING')
+
 # Profile sections are defined dynamically in the config file
 # Each profile can have these settings:
 # [profiles]
