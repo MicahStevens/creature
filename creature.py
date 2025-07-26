@@ -2630,6 +2630,20 @@ class BrowserTab(QWidget):
         home_url = creature_config.general.home_page
         self.navigate_to(home_url)
     
+    def exit_browser(self):
+        """Exit the browser application."""
+        # Find the parent browser window and close it
+        parent_browser = self.parent()
+        while parent_browser and not isinstance(parent_browser, QMainWindow):
+            parent_browser = parent_browser.parent()
+        
+        if parent_browser:
+            parent_browser.close()
+        else:
+            # Fallback: quit the application
+            from PyQt6.QtWidgets import QApplication
+            QApplication.instance().quit()
+    
     def setup_shortcuts(self):
         """Set up keyboard shortcuts for this tab."""
         # Ctrl+G to focus URL bar
@@ -2639,12 +2653,123 @@ class BrowserTab(QWidget):
         # Alt+Home to navigate to home page
         home_shortcut = QShortcut(QKeySequence("Alt+Home"), self)
         home_shortcut.activated.connect(self.navigate_home)
+        
+        # Ctrl+X to exit browser
+        exit_shortcut = QShortcut(QKeySequence("Ctrl+X"), self)
+        exit_shortcut.activated.connect(self.exit_browser)
     
     def focus_url_bar(self):
-        """Focus the URL bar and select all text."""
-        if not self.minimal_mode and hasattr(self, 'url_bar'):
+        """Focus the URL bar and select all text, or show modal URL bar in minimal mode."""
+        if self.minimal_mode:
+            self.show_modal_url_bar()
+        elif hasattr(self, 'url_bar'):
             self.url_bar.setFocus()
             self.url_bar.selectAll()
+    
+    def show_modal_url_bar(self):
+        """Show modal URL bar dialog for minimal mode."""
+        from PyQt6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QLineEdit, QPushButton, QLabel
+        
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Navigate to URL")
+        dialog.setModal(True)
+        dialog.setFixedSize(600, 120)
+        
+        # Get current theme colors for dialog styling
+        parent_browser = self.parent()
+        while parent_browser and not hasattr(parent_browser, 'theme_manager'):
+            parent_browser = parent_browser.parent()
+        
+        if parent_browser and hasattr(parent_browser, 'theme_manager'):
+            current_theme = getattr(parent_browser, 'current_theme', 'light')
+            theme = parent_browser.theme_manager.themes.get(current_theme, {})
+            colors = theme.get('colors', {}) if theme else {}
+        else:
+            colors = {}
+        
+        # Apply theme to dialog
+        dialog.setStyleSheet(f"""
+            QDialog {{
+                background-color: {colors.get('window_bg', '#ffffff')};
+                color: {colors.get('text_color', '#000000')};
+            }}
+        """)
+        
+        # Center the dialog on the browser window
+        parent_geometry = self.parent().geometry() if self.parent() else self.geometry()
+        dialog.move(
+            parent_geometry.x() + (parent_geometry.width() - dialog.width()) // 2,
+            parent_geometry.y() + (parent_geometry.height() - dialog.height()) // 2
+        )
+        
+        layout = QVBoxLayout(dialog)
+        layout.setSpacing(10)
+        
+        # Current URL label
+        current_url = self.web_view.url().toString()
+        current_label = QLabel(f"Current: {current_url}")
+        current_label.setStyleSheet("color: #666; font-size: 11px;")
+        layout.addWidget(current_label)
+        
+        # URL input
+        url_input = QLineEdit()
+        url_input.setPlaceholderText("Enter URL or search term...")
+        url_input.setText(current_url)  # Pre-fill with current URL
+        url_input.selectAll()  # Select all text for easy replacement
+        url_input.setStyleSheet(f"""
+            QLineEdit {{
+                padding: 8px 12px;
+                font-size: 14px;
+                border: 2px solid {colors.get('accent', '#0078d4')};
+                border-radius: 6px;
+                background-color: {colors.get('url_bar_bg', '#ffffff')};
+                color: {colors.get('text_color', '#000000')};
+            }}
+        """)
+        layout.addWidget(url_input)
+        
+        # Buttons
+        button_layout = QHBoxLayout()
+        button_layout.addStretch()
+        
+        cancel_btn = QPushButton("Cancel")
+        cancel_btn.clicked.connect(dialog.reject)
+        button_layout.addWidget(cancel_btn)
+        
+        go_btn = QPushButton("Go")
+        go_btn.setDefault(True)  # Make this the default button for Enter key
+        go_btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {colors.get('accent', '#0078d4')};
+                color: white;
+                padding: 6px 20px;
+                border: none;
+                border-radius: 4px;
+                font-weight: bold;
+            }}
+            QPushButton:hover {{
+                background-color: {colors.get('tab_hover_bg', '#106ebe')};
+            }}
+        """)
+        button_layout.addWidget(go_btn)
+        
+        layout.addLayout(button_layout)
+        
+        # Connect events
+        def navigate_to_url():
+            user_input = url_input.text().strip()
+            if user_input:
+                # Use the same URL processing as the regular navigation
+                final_url, is_search = process_url_or_search(user_input)
+                self.navigate_to(final_url)
+            dialog.accept()
+        
+        go_btn.clicked.connect(navigate_to_url)
+        url_input.returnPressed.connect(navigate_to_url)  # Enter key support
+        
+        # Show dialog and focus on input
+        dialog.show()
+        url_input.setFocus()
     
     def on_url_changed(self, url):
         """Handle URL changes to detect HTTPS vs HTTP and update SSL indicator."""
