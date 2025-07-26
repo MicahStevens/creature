@@ -286,42 +286,55 @@ class BookmarkManager:
             logger.error(f"Failed to save bookmarks: {e}")
     
     def add_bookmark(self, title, url, parent_folder=None):
-        """Add a new bookmark."""
+        """Add a new bookmark in Firefox format."""
+        now = datetime_to_firefox_timestamp()
+        
+        # Create bookmark in Firefox format
         bookmark = {
-            'type': 'bookmark',
-            'title': title,
-            'url': url,
-            'favicon': None,
-            'date_added': datetime.now().isoformat()
+            "guid": generate_guid(),
+            "title": title,
+            "index": 0,  # Will be updated when added
+            "dateAdded": now,
+            "lastModified": now,
+            "id": self._get_next_id(),
+            "typeCode": 1,
+            "type": "text/x-moz-place",
+            "uri": url
         }
         
-        if parent_folder is None:
-            self.bookmarks.append(bookmark)
-        else:
-            # Find parent folder and add bookmark
-            folder = self._find_folder(parent_folder)
-            if folder:
-                folder['children'].append(bookmark)
+        # Find the bookmarks menu folder to add to
+        bookmarks_menu = self._get_bookmarks_menu_folder()
+        if bookmarks_menu and 'children' in bookmarks_menu:
+            # Update index
+            bookmark['index'] = len(bookmarks_menu['children'])
+            bookmarks_menu['children'].append(bookmark)
         
         self.save_bookmarks()
         return bookmark
     
     def add_folder(self, title, parent_folder=None):
-        """Add a new folder."""
+        """Add a new folder in Firefox format."""
+        now = datetime_to_firefox_timestamp()
+        
+        # Create folder in Firefox format
         folder = {
-            'type': 'folder',
-            'title': title,
-            'expanded': True,
-            'children': [],
-            'date_added': datetime.now().isoformat()
+            "guid": generate_guid(),
+            "title": title,
+            "index": 0,  # Will be updated when added
+            "dateAdded": now,
+            "lastModified": now,
+            "id": self._get_next_id(),
+            "typeCode": 2,
+            "type": "text/x-moz-place-container",
+            "children": []
         }
         
-        if parent_folder is None:
-            self.bookmarks.append(folder)
-        else:
-            parent = self._find_folder(parent_folder)
-            if parent:
-                parent['children'].append(folder)
+        # Find the bookmarks menu folder to add to
+        bookmarks_menu = self._get_bookmarks_menu_folder()
+        if bookmarks_menu and 'children' in bookmarks_menu:
+            # Update index
+            folder['index'] = len(bookmarks_menu['children'])
+            bookmarks_menu['children'].append(folder)
         
         self.save_bookmarks()
         return folder
@@ -355,6 +368,33 @@ class BookmarkManager:
             return result
         
         return flatten_items(self.bookmarks)
+    
+    def _get_bookmarks_menu_folder(self):
+        """Get the bookmarks menu folder from Firefox format."""
+        if isinstance(self.bookmarks, dict) and 'children' in self.bookmarks:
+            for child in self.bookmarks['children']:
+                if child.get('root') == 'bookmarksMenuFolder':
+                    return child
+        return None
+    
+    def _get_next_id(self):
+        """Get the next available ID for a new bookmark/folder."""
+        max_id = 0
+        
+        def find_max_id(items):
+            nonlocal max_id
+            if isinstance(items, dict):
+                if 'id' in items:
+                    max_id = max(max_id, items['id'])
+                if 'children' in items:
+                    for child in items['children']:
+                        find_max_id(child)
+            elif isinstance(items, list):
+                for item in items:
+                    find_max_id(item)
+        
+        find_max_id(self.bookmarks)
+        return max_id + 1
 
 
 class FaviconManager:
