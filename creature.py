@@ -651,11 +651,19 @@ class BookmarkToolbar(QWidget):
         self.favicon_manager = FaviconManager(profile_name)
         
         self.setFixedWidth(48)  # Fixed width for vertical toolbar
-        self.setStyleSheet("""
-            BookmarkToolbar {
-                background-color: #f5f5f5;
-                border-right: 1px solid #ddd;
-            }
+        
+        # Get current theme colors
+        self.theme_manager = ThemeManager()
+        current_theme = getattr(parent, 'current_theme', 'light') if parent else 'light'
+        theme = self.theme_manager.themes.get(current_theme, self.theme_manager.themes.get('light', {}))
+        self.colors = theme.get('colors', {}) if theme else {}
+        
+        # Apply themed styles
+        self.setStyleSheet(f"""
+            BookmarkToolbar {{
+                background-color: {self.colors.get('toolbar_bg', self.colors.get('window_bg', '#f5f5f5'))};
+                border-right: 1px solid {self.colors.get('border_color', '#ddd')};
+            }}
         """)
         
         # Main layout
@@ -683,22 +691,23 @@ class BookmarkToolbar(QWidget):
         self.add_button = QPushButton("+")
         self.add_button.setFixedSize(36, 36)
         self.add_button.setToolTip("Add bookmark")
-        self.add_button.setStyleSheet("""
-            QPushButton {
-                border: 1px solid #ccc;
+        self.add_button.setStyleSheet(f"""
+            QPushButton {{
+                border: 1px solid {self.colors.get('border_color', '#ccc')};
                 border-radius: 4px;
-                background-color: #fff;
-                color: #666;
+                background-color: {self.colors.get('button_bg', '#fff')};
+                color: {self.colors.get('text_color', '#666')};
                 font-size: 18px;
                 font-weight: bold;
-            }
-            QPushButton:hover {
-                background-color: #e8e8e8;
-                border-color: #999;
-            }
-            QPushButton:pressed {
-                background-color: #ddd;
-            }
+            }}
+            QPushButton:hover {{
+                background-color: {self.colors.get('tab_hover_bg', '#e8e8e8')};
+                border-color: {self.colors.get('accent', '#999')};
+            }}
+            QPushButton:pressed {{
+                background-color: {self.colors.get('accent', '#ddd')};
+                color: white;
+            }}
         """)
         self.add_button.clicked.connect(self.add_bookmark_dialog)
         self.main_layout.addWidget(self.add_button)
@@ -756,22 +765,23 @@ class BookmarkToolbar(QWidget):
             # Use first letter of title as fallback
             title = bookmark.get('title', '?')
             button.setText(title[0].upper())
-            button.setStyleSheet("""
-                QPushButton {
-                    border: 1px solid #ccc;
+            button.setStyleSheet(f"""
+                QPushButton {{
+                    border: 1px solid {self.colors.get('border_color', '#ccc')};
                     border-radius: 4px;
-                    background-color: #fff;
-                    color: #666;
+                    background-color: {self.colors.get('button_bg', '#fff')};
+                    color: {self.colors.get('text_color', '#666')};
                     font-size: 14px;
                     font-weight: bold;
-                }
-                QPushButton:hover {
-                    background-color: #e8f4fd;
-                    border-color: #0078d4;
-                }
-                QPushButton:pressed {
-                    background-color: #cde7f7;
-                }
+                }}
+                QPushButton:hover {{
+                    background-color: {self.colors.get('tab_hover_bg', '#e8f4fd')};
+                    border-color: {self.colors.get('accent', '#0078d4')};
+                }}
+                QPushButton:pressed {{
+                    background-color: {self.colors.get('accent', '#cde7f7')};
+                    color: white;
+                }}
             """)
         
         # Connect click to navigation
@@ -2512,48 +2522,47 @@ class ProfileSelectionDialog(QDialog):
         super().accept()
 
 class BrowserTab(QWidget):
-    def __init__(self, profile, url=None, profile_name=None):
+    def __init__(self, profile, url=None, profile_name=None, minimal_mode=False):
         super().__init__()
         if url is None:
             url = creature_config.general.home_page
         self.profile = profile
         self.profile_name = profile_name or "default"
+        self.minimal_mode = minimal_mode
         layout = QVBoxLayout(self)
 
-        # Navigation bar
-        nav_layout = QHBoxLayout()
-
-        self.back_btn = QPushButton("←")
-        self.forward_btn = QPushButton("→")
-        self.refresh_btn = QPushButton("⟳")
-        
-        # SSL indicator (make it a button to match other navigation buttons)
-        self.ssl_indicator = QPushButton("🔓")
-        self.ssl_indicator.setToolTip("Click for SSL certificate details")
-        self.ssl_indicator.clicked.connect(self.show_certificate_details)
-        self.ssl_indicator.setStyleSheet("""
-            QPushButton {
-                border: 1px solid #ccc;
-                border-radius: 4px;
-                background-color: transparent;
-                font-size: 14px;
-                padding: 6px 8px;
-                min-height: 20px;
-            }
-            QPushButton:hover {
-                background-color: rgba(0, 0, 0, 0.1);
-            }
-        """)
-        
-        self.url_bar = QLineEdit()
-
-        nav_layout.addWidget(self.back_btn)
-        nav_layout.addWidget(self.forward_btn)
-        nav_layout.addWidget(self.refresh_btn)
-        nav_layout.addWidget(self.ssl_indicator)
-        nav_layout.addWidget(self.url_bar)
-
-        layout.addLayout(nav_layout)
+        # Navigation bar (skip in minimal mode)
+        if not self.minimal_mode:
+            nav_layout = QHBoxLayout()
+            self.back_btn = QPushButton("←")
+            self.forward_btn = QPushButton("→")
+            self.refresh_btn = QPushButton("⟳")
+            
+            # SSL indicator (make it a button to match other navigation buttons)
+            self.ssl_indicator = QPushButton("🔓")
+            self.ssl_indicator.setToolTip("Click for SSL certificate details")
+            self.ssl_indicator.clicked.connect(self.show_certificate_details)
+            self.ssl_indicator.setStyleSheet("""
+                QPushButton {
+                    border: 1px solid #ccc;
+                    border-radius: 4px;
+                    background-color: transparent;
+                    font-size: 14px;
+                    padding: 6px 8px;
+                    min-height: 20px;
+                }
+                QPushButton:hover {
+                    background-color: rgba(0, 0, 0, 0.1);
+                }
+            """)
+            
+            self.url_bar = QLineEdit()
+            nav_layout.addWidget(self.back_btn)
+            nav_layout.addWidget(self.forward_btn)
+            nav_layout.addWidget(self.refresh_btn)
+            nav_layout.addWidget(self.ssl_indicator)
+            nav_layout.addWidget(self.url_bar)
+            layout.addLayout(nav_layout)
 
         # Web view with custom profile and KeePassXC support
         self.web_view = KeePassXCWebEngineView()
@@ -2585,11 +2594,12 @@ class BrowserTab(QWidget):
         # Add the content layout to the main layout
         layout.addLayout(content_layout)
 
-        # Connect signals
-        self.back_btn.clicked.connect(self.web_view.back)
-        self.forward_btn.clicked.connect(self.web_view.forward)
-        self.refresh_btn.clicked.connect(self.web_view.reload)
-        self.url_bar.returnPressed.connect(self.navigate)
+        # Connect signals (only if navigation elements exist)
+        if not self.minimal_mode:
+            self.back_btn.clicked.connect(self.web_view.back)
+            self.forward_btn.clicked.connect(self.web_view.forward)
+            self.refresh_btn.clicked.connect(self.web_view.reload)
+            self.url_bar.returnPressed.connect(self.navigate)
         self.web_view.urlChanged.connect(self.on_url_changed)
         
         # Connect SSL status signals
@@ -2602,6 +2612,8 @@ class BrowserTab(QWidget):
         self.setup_shortcuts()
 
     def navigate(self):
+        if self.minimal_mode:
+            return  # No navigation in minimal mode
         user_input = self.url_bar.text().strip()
         if not user_input:
             return
@@ -2630,13 +2642,15 @@ class BrowserTab(QWidget):
     
     def focus_url_bar(self):
         """Focus the URL bar and select all text."""
-        self.url_bar.setFocus()
-        self.url_bar.selectAll()
+        if not self.minimal_mode and hasattr(self, 'url_bar'):
+            self.url_bar.setFocus()
+            self.url_bar.selectAll()
     
     def on_url_changed(self, url):
         """Handle URL changes to detect HTTPS vs HTTP and update SSL indicator."""
-        # Update URL bar
-        self.url_bar.setText(url.toString())
+        # Update URL bar (if it exists)
+        if not self.minimal_mode:
+            self.url_bar.setText(url.toString())
         
         # Check if connection is secure
         is_secure = url.scheme().lower() == 'https'
@@ -2655,6 +2669,9 @@ class BrowserTab(QWidget):
     
     def update_ssl_indicator(self):
         """Update SSL indicator based on current status."""
+        if self.minimal_mode:
+            return  # No SSL indicator in minimal mode
+            
         if self.ssl_status['is_secure']:
             if self.ssl_status['certificate_valid']:
                 self.ssl_indicator.setText("🔒")
@@ -2716,11 +2733,12 @@ class BrowserTab(QWidget):
 
 
 class CreatureBrowser(QMainWindow):
-    def __init__(self, profile_name=None, force_new_window=None, theme=None):
+    def __init__(self, profile_name=None, force_new_window=None, theme=None, minimal_mode=False):
         super().__init__()
         
         # Use config values if not overridden by arguments
         self.force_new_window = force_new_window if force_new_window is not None else creature_config.general.force_new_window
+        self.minimal_mode = minimal_mode
         self.profile_name = profile_name or creature_config.general.default_profile
         
         # Get profile-specific theme if configured
@@ -2767,7 +2785,11 @@ class CreatureBrowser(QMainWindow):
         # Apply theme
         self.theme_manager = ThemeManager()
 
-        if not self.force_new_window:
+        if self.minimal_mode:
+            # Minimal mode: single tab, no navigation bar, no menu
+            self.single_tab = BrowserTab(self.profile, profile_name=self.profile_name, minimal_mode=True)
+            self.setCentralWidget(self.single_tab)
+        elif not self.force_new_window:
             # Tab widget for normal mode
             self.tabs = QTabWidget()
             self.tabs.setTabsClosable(True)
@@ -2783,8 +2805,9 @@ class CreatureBrowser(QMainWindow):
             self.single_tab = BrowserTab(self.profile, profile_name=self.profile_name)
             self.setCentralWidget(self.single_tab)
 
-        # Set up hamburger menu (replaces traditional menu bar)
-        self.setup_hamburger_menu()
+        # Set up hamburger menu (replaces traditional menu bar) - skip in minimal mode
+        if not self.minimal_mode:
+            self.setup_hamburger_menu()
 
     def setup_hamburger_menu(self):
         """Set up hamburger menu button in tab bar (replaces traditional menu bar)."""
@@ -3143,6 +3166,8 @@ def main():
                        help="Path to configuration file")
     parser.add_argument("--no-profile-prompt", action="store_true",
                        help="Don't prompt for profile selection")
+    parser.add_argument("--minimal", "-m", action="store_true",
+                       help="Minimal mode: no tabs, no menu, no navigation bar")
 
     args = parser.parse_args()
 
@@ -3199,7 +3224,8 @@ def main():
     browser = CreatureBrowser(
         profile_name=profile_name,
         force_new_window=args.new_window if args.new_window else None,
-        theme=args.theme
+        theme=args.theme,
+        minimal_mode=args.minimal
     )
 
     # Apply theme (browser already determined the correct theme based on profile)
