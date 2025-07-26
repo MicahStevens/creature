@@ -1379,14 +1379,20 @@ class ProfileManager:
         settings.setAttribute(QWebEngineSettings.WebAttribute.ScreenCaptureEnabled, screen_capture_enabled)
         settings.setAttribute(QWebEngineSettings.WebAttribute.WebRTCPublicInterfacesOnly, False)
         
-        # Additional media-related settings
+        # Additional stability settings for media device switching
         settings.setAttribute(QWebEngineSettings.WebAttribute.PlaybackRequiresUserGesture, False)
         settings.setAttribute(QWebEngineSettings.WebAttribute.AllowRunningInsecureContent, False)
         
-        # Enable WebGL and graphics acceleration
+        # Enable WebGL but disable problematic 2D canvas acceleration 
         settings.setAttribute(QWebEngineSettings.WebAttribute.WebGLEnabled, True)
-        settings.setAttribute(QWebEngineSettings.WebAttribute.Accelerated2dCanvasEnabled, True)
+        settings.setAttribute(QWebEngineSettings.WebAttribute.Accelerated2dCanvasEnabled, False)  # Disabled to prevent black screens
         settings.setAttribute(QWebEngineSettings.WebAttribute.PdfViewerEnabled, True)
+        
+        # Set a proper Chrome user agent for Google Meet compatibility
+        profile.setHttpUserAgent(
+            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/120.0.0.0 Safari/537.36"
+        )
         
         # Permission handling is done through web pages, not profiles
 
@@ -1454,12 +1460,17 @@ class ProfileManager:
         logger.debug(f"Feature: {feature}")
         logger.debug(f"Profile: {profile_name}")
         
-        try:
-            # Auto-grant the feature permission  
-            profile.setPermission(url, feature, QWebEnginePage.PermissionPolicy.PermissionGrantedByUser)
-            logger.info(f"AUTO-GRANTED feature {feature} for {url.toString()}")
-        except Exception as e:
-            logger.error(f"Error granting feature permission: {e}")
+        # DISABLED: Let page-level handler show dialog instead of auto-granting
+        logger.debug("Profile-level auto-granting disabled - delegating to page-level handler")
+        return
+        
+        # Original auto-granting code (commented out)
+        # try:
+        #     # Auto-grant the feature permission  
+        #     profile.setPermission(url, feature, QWebEnginePage.PermissionPolicy.PermissionGrantedByUser)
+        #     logger.info(f"AUTO-GRANTED feature {feature} for {url.toString()}")
+        # except Exception as e:
+        #     logger.error(f"Error granting feature permission: {e}")
     
     def get_stored_permission(self, profile_name, origin, permission_type):
         """Get stored permission for a site and permission type."""
@@ -1583,11 +1594,28 @@ class ProfileManager:
         
         permission_name = permission_names.get(permission_type, "Unknown permission")
         
-        # TEMPORARY: Auto-grant permissions for debugging
-        logger.info(f"AUTO-GRANTING {permission_name} permission to {origin} for profile {profile_name}")
-        permission.grant()
-        self.save_permission(profile_name, origin, permission_type, True)
+        # DISABLED: Let page-level handler show dialog instead of auto-granting
+        logger.debug(f"Permission request for {permission_name} from {origin} - delegating to page-level handler")
+        
+        # Check stored permissions first
+        stored_permission = self.get_stored_permission(profile_name, origin, permission_type)
+        if stored_permission is not None:
+            if stored_permission:
+                logger.info(f"GRANTING stored {permission_name} permission to {origin}")
+                permission.grant()
+            else:
+                logger.info(f"DENYING stored {permission_name} permission to {origin}")
+                permission.deny()
+            return
+        
+        # No stored permission - let page handler show dialog
+        logger.debug(f"No stored permission for {permission_name} - page handler will show dialog")
         return
+        
+        # Original auto-granting code (commented out)
+        # logger.info(f"AUTO-GRANTING {permission_name} permission to {origin} for profile {profile_name}")
+        # permission.grant()
+        # self.save_permission(profile_name, origin, permission_type, True)
         
         # Show permission dialog with profile information (disabled for debugging)
         # reply = QMessageBox.question(
@@ -1955,6 +1983,7 @@ class SSLAwarePage(QWebEnginePage):
             'errors': []
         }
         self.profile_name = getattr(profile, 'profile_name', 'default')
+        self._profile_ref = profile  # Keep reference to prevent premature cleanup
         
         # Debug: List all available signals/methods
         logger.debug("=== QWebEnginePage available attributes ===")
@@ -1976,6 +2005,13 @@ class SSLAwarePage(QWebEnginePage):
             logger.info("Connected to featurePermissionRequested signal")
         except AttributeError:
             logger.debug("featurePermissionRequested not available")
+        
+        # Connect to JavaScript console messages
+        try:
+            self.javaScriptConsoleMessage.connect(self._on_javascript_console_message)
+            logger.debug("Connected to JavaScript console message handler")
+        except AttributeError:
+            logger.debug("JavaScript console message handler not available")
         
         # Store original setFeaturePermission method
         self._original_setFeaturePermission = self.setFeaturePermission
@@ -2069,13 +2105,15 @@ class SSLAwarePage(QWebEnginePage):
                 return
                 
             logger.debug(f"Permission state: {permission.state()}")
-            try:
-                if hasattr(permission, 'State') and permission.state() != permission.State.Requested:
-                    logger.debug(f"Permission request not in requested state ({permission.state()}), skipping")
-                    return
-            except AttributeError:
-                # Skip state check if State enum is not accessible
-                pass
+            # DISABLED: Don't skip based on state - handle all permission requests
+            # We want to show dialogs even if something else auto-granted them
+            # try:
+            #     if hasattr(permission, 'State') and permission.state() != permission.State.Requested:
+            #         logger.debug(f"Permission request not in requested state ({permission.state()}), skipping")
+            #         return
+            # except AttributeError:
+            #     # Skip state check if State enum is not accessible
+            #     pass
                 
             permission_type = permission.permissionType()
             origin = permission.origin().host()
@@ -2149,6 +2187,98 @@ class SSLAwarePage(QWebEnginePage):
             };
             console.log('🔧 Legacy getUserMedia monitoring injected');
         }
+        
+        // Google Meet specific: Auto-trigger permission requests and debug JS errors
+        if (window.location.hostname.includes('meet.google.com')) {
+            console.log('🎯 Google Meet detected - setting up debugging and auto-trigger');
+            
+            // Monitor JavaScript errors with more detailed logging
+            window.addEventListener('error', function(e) {
+                console.error('❌ JavaScript Error on Google Meet:', e.error?.stack || e.error);
+                console.error('Error details - File:', e.filename, 'Line:', e.lineno, 'Col:', e.colno, 'Message:', e.message);
+            });
+            
+            // Monitor unhandled promise rejections
+            window.addEventListener('unhandledrejection', function(e) {
+                console.error('❌ Unhandled Promise Rejection on Google Meet:', e.reason);
+                if (e.reason?.stack) console.error('Stack:', e.reason.stack);
+            });
+            
+            // Monitor all console methods, not just error
+            const originalLog = console.log;
+            const originalError = console.error;
+            const originalWarn = console.warn;
+            
+            console.log = function(...args) {
+                if (args.some(arg => typeof arg === 'string' && (arg.includes('meet') || arg.includes('Meeting')))) {
+                    originalLog('🌐 Google Meet Log:', ...args);
+                }
+                originalLog.apply(console, args);
+            };
+            
+            console.error = function(...args) {
+                originalError('🚨 Google Meet Error:', ...args);
+                originalError.apply(console, args);
+            };
+            
+            console.warn = function(...args) {
+                originalError('⚠️ Google Meet Warning:', ...args);
+                originalWarn.apply(console, args);
+            };
+            
+            // Monitor fetch/XHR requests for meeting creation
+            const originalFetch = window.fetch;
+            window.fetch = function(...args) {
+                const url = args[0];
+                console.log('🌐 Google Meet Fetch Request:', url);
+                return originalFetch.apply(this, args)
+                    .then(response => {
+                        console.log('✅ Fetch Response:', response.status, response.url);
+                        if (!response.ok) {
+                            console.error('❌ Fetch failed with status:', response.status, response.statusText);
+                        }
+                        return response;
+                    })
+                    .catch(error => {
+                        console.error('❌ Fetch Error:', error);
+                        throw error;
+                    });
+            };
+            
+            setTimeout(() => {
+                // Try to trigger permission requests
+                if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+                    console.log('🔧 Pre-requesting camera and microphone for Google Meet...');
+                    navigator.mediaDevices.getUserMedia({video: true, audio: true})
+                        .then(stream => {
+                            console.log('✅ Google Meet pre-request successful');
+                            // Keep stream briefly then close
+                            setTimeout(() => {
+                                stream.getTracks().forEach(track => track.stop());
+                                console.log('🔧 Pre-request streams stopped');
+                            }, 100);
+                        })
+                        .catch(error => {
+                            console.log('❌ Google Meet pre-request failed:', error);
+                        });
+                }
+                
+                // Debug: Check for common Google Meet elements
+                setTimeout(() => {
+                    const instantButton = document.querySelector('[data-testid="instant-meeting-button"]') || 
+                                        document.querySelector('button[aria-label*="instant"]') ||
+                                        document.querySelector('button[aria-label*="Instant"]');
+                    if (instantButton) {
+                        console.log('✅ Found instant meeting button:', instantButton);
+                        instantButton.addEventListener('click', () => {
+                            console.log('🎯 Instant meeting button clicked!');
+                        });
+                    } else {
+                        console.log('❌ Could not find instant meeting button');
+                    }
+                }, 1000);
+            }, 2000); // Wait 2 seconds for page to load
+        }
         """
         
         try:
@@ -2159,48 +2289,86 @@ class SSLAwarePage(QWebEnginePage):
     
     def _pre_grant_google_meet_permissions(self):
         """Pre-grant media permissions for Google Meet to avoid stuck requests."""
+        # Google Meet specifically needs pre-granting to avoid getting stuck
+        # We'll show a dialog first, then pre-grant if user approves
         try:
             from PyQt6.QtCore import QUrl
             
             # Get the current URL
             current_url = self.url()
-            logger.info(f"🎯 Pre-granting permissions for Google Meet: {current_url.toString()}")
             
-            # Pre-grant all media features for this Google Meet URL
-            media_features = [
-                QWebEnginePage.Feature.MediaAudioCapture,
-                QWebEnginePage.Feature.MediaVideoCapture, 
-                QWebEnginePage.Feature.MediaAudioVideoCapture
-            ]
+            # Ask user once for Google Meet permissions
+            permission_granted = self._ask_user_permission(
+                current_url.host(), 
+                "camera and microphone for Google Meet"
+            )
             
-            for feature in media_features:
-                try:
-                    self.setFeaturePermission(current_url, feature, QWebEnginePage.PermissionPolicy.PermissionGrantedByUser)
-                    logger.info(f"✅ Pre-granted {feature} for Google Meet")
-                except Exception as e:
-                    logger.debug(f"Could not pre-grant {feature}: {e}")
-                    
-            # Also inject JavaScript to clear any stuck permission requests
-            clear_js = """
-            // Try to clear any stuck permission requests
-            if (window.navigator && window.navigator.permissions) {
-                window.navigator.permissions.query({name: 'camera'}).then(function(result) {
-                    console.log('Camera permission status:', result.state);
-                });
-                window.navigator.permissions.query({name: 'microphone'}).then(function(result) {
-                    console.log('Microphone permission status:', result.state);
-                });
-            }
-            
-            // Force a fresh getUserMedia call to reset state
-            console.log('🔧 Attempting to clear stuck permissions...');
-            """
-            
-            self.runJavaScript(clear_js)
-            logger.debug("🔧 Injected permission clearing JavaScript")
-            
+            if permission_granted:
+                logger.info(f"🎯 User approved - pre-granting permissions for Google Meet: {current_url.toString()}")
+                
+                # Pre-grant all media features for this Google Meet URL
+                media_features = [
+                    QWebEnginePage.Feature.MediaAudioCapture,
+                    QWebEnginePage.Feature.MediaVideoCapture, 
+                    QWebEnginePage.Feature.MediaAudioVideoCapture
+                ]
+                
+                for feature in media_features:
+                    try:
+                        self.setFeaturePermission(current_url, feature, QWebEnginePage.PermissionPolicy.PermissionGrantedByUser)
+                        logger.info(f"✅ Pre-granted {feature} for Google Meet")
+                    except Exception as e:
+                        logger.debug(f"Could not pre-grant {feature}: {e}")
+            else:
+                logger.info("❌ User denied Google Meet permissions")
+                return
         except Exception as e:
-            logger.error(f"Error pre-granting Google Meet permissions: {e}")
+            logger.error(f"Error handling Google Meet permissions: {e}")
+            return
+        
+        # Original pre-granting code (commented out)
+        # try:
+        #     from PyQt6.QtCore import QUrl
+        #     
+        #     # Get the current URL
+        #     current_url = self.url()
+        #     logger.info(f"🎯 Pre-granting permissions for Google Meet: {current_url.toString()}")
+        #     
+        #     # Pre-grant all media features for this Google Meet URL
+        #     media_features = [
+        #         QWebEnginePage.Feature.MediaAudioCapture,
+        #         QWebEnginePage.Feature.MediaVideoCapture, 
+        #         QWebEnginePage.Feature.MediaAudioVideoCapture
+        #     ]
+        #     
+        #     for feature in media_features:
+        #         try:
+        #             self.setFeaturePermission(current_url, feature, QWebEnginePage.PermissionPolicy.PermissionGrantedByUser)
+        #             logger.info(f"✅ Pre-granted {feature} for Google Meet")
+        #         except Exception as e:
+        #             logger.debug(f"Could not pre-grant {feature}: {e}")
+        #                 
+        #     # Also inject JavaScript to clear any stuck permission requests
+        #     clear_js = """
+        #     // Try to clear any stuck permission requests
+        #     if (window.navigator && window.navigator.permissions) {
+        #         window.navigator.permissions.query({name: 'camera'}).then(function(result) {
+        #             console.log('Camera permission status:', result.state);
+        #         });
+        #         window.navigator.permissions.query({name: 'microphone'}).then(function(result) {
+        #             console.log('Microphone permission status:', result.state);
+        #         });
+        #     }
+        #     
+        #     // Force a fresh getUserMedia call to reset state
+        #     console.log('🔧 Attempting to clear stuck permissions...');
+        #     """
+        #     
+        #     self.runJavaScript(clear_js)
+        #     logger.debug("🔧 Injected permission clearing JavaScript")
+        #     
+        # except Exception as e:
+        #     logger.error(f"Error pre-granting Google Meet permissions: {e}")
     
     def handle_feature_permission_request(self, securityOrigin, feature):
         """Handle feature permission requests using the correct PyQt pattern."""
@@ -2218,19 +2386,95 @@ class SSLAwarePage(QWebEnginePage):
                     logger.debug(f"Feature: {attr} = {feature_value}")
             self._features_listed = True
         
-        # Auto-grant media permissions following the PyQt5/6 pattern
+        # Show permission dialog to user instead of auto-granting
         try:
             if feature in (QWebEnginePage.Feature.MediaAudioCapture, 
                           QWebEnginePage.Feature.MediaVideoCapture, 
                           QWebEnginePage.Feature.MediaAudioVideoCapture):
-                self.setFeaturePermission(securityOrigin, feature, QWebEnginePage.PermissionPolicy.PermissionGrantedByUser)
-                logger.info(f"✅ AUTO-GRANTED media permission {feature} for {securityOrigin.toString()}")
+                
+                # Get feature name for dialog
+                feature_names = {
+                    QWebEnginePage.Feature.MediaAudioCapture: "microphone",
+                    QWebEnginePage.Feature.MediaVideoCapture: "camera", 
+                    QWebEnginePage.Feature.MediaAudioVideoCapture: "camera and microphone"
+                }
+                feature_name = feature_names.get(feature, "media device")
+                
+                # Ask user for permission
+                permission_granted = self._ask_user_permission(securityOrigin.toString(), feature_name)
+                
+                if permission_granted:
+                    self.setFeaturePermission(securityOrigin, feature, QWebEnginePage.PermissionPolicy.PermissionGrantedByUser)
+                    logger.info(f"✅ GRANTED {feature_name} permission to {securityOrigin.toString()}")
+                else:
+                    self.setFeaturePermission(securityOrigin, feature, QWebEnginePage.PermissionPolicy.PermissionDeniedByUser)
+                    logger.info(f"❌ DENIED {feature_name} permission to {securityOrigin.toString()}")
             else:
-                # For non-media features, still grant them for testing
-                self.setFeaturePermission(securityOrigin, feature, QWebEnginePage.PermissionPolicy.PermissionGrantedByUser)
-                logger.info(f"✅ AUTO-GRANTED other permission {feature} for {securityOrigin.toString()}")
+                # For non-media features, ask for permission too
+                permission_granted = self._ask_user_permission(securityOrigin.toString(), f"feature {feature}")
+                
+                if permission_granted:
+                    self.setFeaturePermission(securityOrigin, feature, QWebEnginePage.PermissionPolicy.PermissionGrantedByUser)
+                    logger.info(f"✅ GRANTED feature {feature} to {securityOrigin.toString()}")
+                else:
+                    self.setFeaturePermission(securityOrigin, feature, QWebEnginePage.PermissionPolicy.PermissionDeniedByUser)
+                    logger.info(f"❌ DENIED feature {feature} to {securityOrigin.toString()}")
         except Exception as e:
-            logger.error(f"❌ Error granting feature permission: {e}")
+            logger.error(f"❌ Error handling feature permission: {e}")
+    
+    def _ask_user_permission(self, origin, feature_name):
+        """Ask user for permission via dialog."""
+        from PyQt6.QtWidgets import QMessageBox
+        
+        # Get the parent window properly
+        parent_widget = None
+        try:
+            # Try to get the main window as parent
+            parent_widget = self.parent()
+            while parent_widget and not hasattr(parent_widget, 'windowTitle'):
+                parent_widget = parent_widget.parent()
+        except:
+            parent_widget = None
+        
+        # Create permission dialog
+        msg_box = QMessageBox(parent_widget)
+        msg_box.setWindowTitle("Permission Request")
+        msg_box.setText(f"Allow {origin} to access your {feature_name}?")
+        msg_box.setInformativeText(f"The website {origin} is requesting access to your {feature_name}.")
+        msg_box.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        msg_box.setDefaultButton(QMessageBox.StandardButton.No)
+        msg_box.setIcon(QMessageBox.Icon.Question)
+        
+        # Show dialog and get result
+        result = msg_box.exec()
+        return result == QMessageBox.StandardButton.Yes
+    
+    def _on_javascript_console_message(self, level, message, line, source):
+        """Handle JavaScript console messages and forward to Python logging."""
+        # Only log Google Meet related messages to avoid spam
+        if 'meet.google.com' in source or 'Google Meet' in message or any(marker in message for marker in ['🎯', '🔧', '✅', '❌', '🚨', '🌐']):
+            level_map = {
+                0: "INFO",    # Info
+                1: "WARNING", # Warning  
+                2: "ERROR"    # Error
+            }
+            level_name = level_map.get(level, "DEBUG")
+            logger.info(f"JS-{level_name}: {message} (line {line} in {source})")
+    
+    def __del__(self):
+        """Proper cleanup to prevent profile/page lifecycle warnings."""
+        try:
+            # Disconnect all signals before destruction
+            self.permissionRequested.disconnect()
+            self.featurePermissionRequested.disconnect()
+            self.loadFinished.disconnect()
+            
+            # Clear profile reference
+            self._profile_ref = None
+            
+            logger.debug("SSLAwarePage cleanup completed")
+        except Exception as e:
+            logger.debug(f"SSLAwarePage cleanup error (normal during shutdown): {e}")
 
 
 class CertificateDetailsDialog(QDialog):
@@ -3736,6 +3980,23 @@ class BrowserTab(QWidget):
         logger.debug(f"Current SSL status: {self.ssl_status}")
         dialog = CertificateDetailsDialog(self.ssl_status, self)
         dialog.exec()
+    
+    def __del__(self):
+        """Cleanup BrowserTab to prevent memory leaks."""
+        try:
+            # Disconnect SSL page signals
+            if hasattr(self, 'ssl_page'):
+                self.ssl_page.sslStatusChanged.disconnect()
+                # Clear page reference before deletion
+                self.ssl_page = None
+            
+            # Clear web view page
+            if hasattr(self, 'web_view') and self.web_view:
+                self.web_view.setPage(None)
+                
+            logger.debug(f"BrowserTab cleanup completed for profile: {self.profile_name}")
+        except Exception as e:
+            logger.debug(f"BrowserTab cleanup error (normal during shutdown): {e}")
 
 
 class CreatureBrowser(QMainWindow):
@@ -3998,20 +4259,35 @@ class CreatureBrowser(QMainWindow):
         )
 
     def update_tab_title(self, index, title):
-        if hasattr(self, 'tabs') and index < self.tabs.count():
-            short_title = title[:20] + "..." if len(title) > 20 else title
-            self.tabs.setTabText(index, short_title)
+        try:
+            if hasattr(self, 'tabs') and self.tabs and index < self.tabs.count():
+                short_title = title[:20] + "..." if len(title) > 20 else title
+                self.tabs.setTabText(index, short_title)
+        except (RuntimeError, AttributeError) as e:
+            # Widget has been deleted or is being destroyed - ignore
+            logger.debug(f"Tab title update skipped (widget deleted): {e}")
+            pass
 
     def close_tab(self, index):
         if hasattr(self, 'tabs'):
-            if self.tabs.count() > 1:
-                self.tabs.removeTab(index)
-            else:
-                if creature_config.browser.tab_close_behavior == 'close_window':
-                    self.close()
+            try:
+                # Get the tab widget before removing it
+                tab_widget = self.tabs.widget(index)
+                if tab_widget and hasattr(tab_widget, 'web_view'):
+                    # Disconnect titleChanged signal to prevent late updates
+                    tab_widget.web_view.titleChanged.disconnect()
+                    
+                if self.tabs.count() > 1:
+                    self.tabs.removeTab(index)
                 else:
-                    # Keep window open with last tab
-                    pass
+                    if creature_config.browser.tab_close_behavior == 'close_window':
+                        self.close()
+                    else:
+                        # Keep window open with last tab
+                        pass
+            except (RuntimeError, AttributeError) as e:
+                logger.debug(f"Tab close error (normal during shutdown): {e}")
+                pass
 
     def new_window(self, url=None):
         if url is None or isinstance(url, bool):
@@ -4109,6 +4385,24 @@ class CreatureBrowser(QMainWindow):
         current_index = self.tabs.currentIndex()
         prev_index = (current_index - 1) % self.tabs.count()
         self.tabs.setCurrentIndex(prev_index)
+    
+    def __del__(self):
+        """Cleanup CreatureBrowser to prevent race conditions during shutdown."""
+        try:
+            # Disconnect all tab title change signals
+            if hasattr(self, 'tabs') and self.tabs:
+                for i in range(self.tabs.count()):
+                    tab_widget = self.tabs.widget(i)
+                    if tab_widget and hasattr(tab_widget, 'web_view'):
+                        try:
+                            tab_widget.web_view.titleChanged.disconnect()
+                        except (RuntimeError, TypeError):
+                            pass
+            
+            logger.debug("CreatureBrowser cleanup completed")
+        except Exception as e:
+            logger.debug(f"CreatureBrowser cleanup error (normal during shutdown): {e}")
+
 
 def setup_wayland_compatibility():
     """Ensure Wayland compatibility and fix graphics issues"""
@@ -4152,13 +4446,27 @@ def setup_wayland_compatibility():
     if creature_config.wayland.enable_vaapi_video_decoder:
         chromium_flags.append("--enable-features=VaapiVideoDecoder")
     
-    # Graphics acceleration and WebGL fixes
-    chromium_flags.extend([
-        "--ignore-gpu-blocklist",
-        "--enable-gpu-rasterization",
-        "--enable-webgl",
-        "--enable-accelerated-2d-canvas"
-    ])
+    # Graphics acceleration and WebGL fixes - more conservative for media stability
+    if creature_config.wayland.disable_hardware_acceleration:
+        # Complete hardware acceleration disable for maximum stability
+        chromium_flags.extend([
+            "--disable-gpu",
+            "--disable-gpu-compositing",
+            "--disable-accelerated-2d-canvas",
+            "--disable-accelerated-video-decode",
+            "--disable-gpu-rasterization",
+            "--disable-features=VizDisplayCompositor"
+        ])
+    else:
+        # Partial acceleration with media stability focus
+        chromium_flags.extend([
+            "--ignore-gpu-blocklist",
+            "--disable-gpu-rasterization",  # Disable GPU raster to avoid conflicts with media
+            "--enable-webgl",
+            "--disable-accelerated-2d-canvas",  # Disable 2D canvas acceleration to prevent black screens
+            "--disable-gpu-compositing",  # Prevent GPU compositing issues during media device changes
+            "--disable-features=VizDisplayCompositor"  # Use software compositor for stability
+        ])
     
     # Only add Wayland-specific Chromium flags if we're actually on Wayland
     if is_wayland and ui_config.enable_high_dpi_scaling:
@@ -4169,6 +4477,22 @@ def setup_wayland_compatibility():
     # Add general compatibility flags
     chromium_flags.append("--no-sandbox")  # Often needed for Chromium
     chromium_flags.append("--disable-dev-shm-usage")  # Helps with shared memory issues
+    
+    # Media stability flags to prevent black screen during device changes
+    chromium_flags.extend([
+        "--disable-background-media-suspend",  # Prevent media suspension
+        "--disable-renderer-backgrounding",  # Keep renderer active
+        "--disable-backgrounding-occluded-windows",  # Prevent window backgrounding
+        "--disable-ipc-flooding-protection",  # Prevent IPC issues during media changes
+        "--enable-experimental-web-platform-features",  # Enable latest WebRTC features
+        "--allow-running-insecure-content",  # Allow mixed content for media
+        "--enable-features=NetworkService,CookiesWithoutSameSiteMustBeSecure",  # Enable modern network and cookies
+        "--enable-javascript-harmony",  # Enable modern JavaScript features
+        "--enable-blink-features=WebAssembly",  # Enable WebAssembly for complex apps
+        "--disable-blink-features=BlockCredentialedSubresources",  # Allow credentialed requests
+        "--disable-site-isolation-trials",  # Allow cross-site cookies for Google auth
+        "--enable-dom-distiller"  # Enable content processing
+    ])
     
     if chromium_flags:
         os.environ.setdefault("QTWEBENGINE_CHROMIUM_FLAGS", " ".join(chromium_flags))

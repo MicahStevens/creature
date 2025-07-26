@@ -76,6 +76,9 @@ enable_vaapi_video_decoder = boolean(default=True)
 # Disable sandbox
 disable_sandbox = boolean(default=True)
 
+# Disable hardware acceleration (fixes black screen issues)
+disable_hardware_acceleration = boolean(default=False)
+
 [ui]
 # UI scaling factor (1.0 = normal, 1.25 = 25% larger, etc.)
 scale_factor = float(min=0.5, max=3.0, default=1.0)
