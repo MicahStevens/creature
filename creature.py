@@ -652,11 +652,18 @@ class BookmarkToolbar(QWidget):
         
         self.setFixedWidth(48)  # Fixed width for vertical toolbar
         
-        # Get current theme colors
+        # Get current theme colors - traverse up to find the browser window
         self.theme_manager = ThemeManager()
-        current_theme = getattr(parent, 'current_theme', 'light') if parent else 'light'
+        parent_browser = parent
+        while parent_browser and not hasattr(parent_browser, 'current_theme'):
+            parent_browser = parent_browser.parent()
+        
+        current_theme = getattr(parent_browser, 'current_theme', 'light') if parent_browser else 'light'
         theme = self.theme_manager.themes.get(current_theme, self.theme_manager.themes.get('light', {}))
         self.colors = theme.get('colors', {}) if theme else {}
+        
+        # Debug information
+        print(f"BookmarkToolbar: Found theme '{current_theme}', window_bg: {self.colors.get('window_bg', 'NOT_FOUND')}, toolbar_bg: {self.colors.get('toolbar_bg', 'NOT_FOUND')}")
         
         # Apply themed styles
         self.setStyleSheet(f"""
@@ -717,6 +724,28 @@ class BookmarkToolbar(QWidget):
         
         # Load and display bookmarks
         self.refresh_bookmarks()
+    
+    def refresh_theme(self):
+        """Refresh the theme styling for the bookmark toolbar."""
+        # Re-get current theme colors
+        parent_browser = self.parent()
+        while parent_browser and not hasattr(parent_browser, 'current_theme'):
+            parent_browser = parent_browser.parent()
+        
+        current_theme = getattr(parent_browser, 'current_theme', 'light') if parent_browser else 'light'
+        theme = self.theme_manager.themes.get(current_theme, self.theme_manager.themes.get('light', {}))
+        self.colors = theme.get('colors', {}) if theme else {}
+        
+        # Debug information
+        print(f"BookmarkToolbar.refresh_theme: Found theme '{current_theme}', window_bg: {self.colors.get('window_bg', 'NOT_FOUND')}, toolbar_bg: {self.colors.get('toolbar_bg', 'NOT_FOUND')}")
+        
+        # Re-apply themed styles
+        self.setStyleSheet(f"""
+            BookmarkToolbar {{
+                background-color: {self.colors.get('toolbar_bg', self.colors.get('window_bg', '#f5f5f5'))};
+                border-right: 1px solid {self.colors.get('border_color', '#ddd')};
+            }}
+        """)
     
     def refresh_bookmarks(self):
         """Refresh the bookmark display."""
@@ -3168,6 +3197,16 @@ class CreatureBrowser(QMainWindow):
         self.theme_manager.apply_theme(app, theme_name)
         self.current_theme = theme_name
         
+        # Refresh bookmark toolbar theme if it exists
+        if hasattr(self, 'single_tab') and hasattr(self.single_tab, 'bookmark_toolbar'):
+            self.single_tab.bookmark_toolbar.refresh_theme()
+        elif hasattr(self, 'tabs'):
+            # Refresh theme for all tabs
+            for i in range(self.tabs.count()):
+                tab = self.tabs.widget(i)
+                if hasattr(tab, 'bookmark_toolbar'):
+                    tab.bookmark_toolbar.refresh_theme()
+        
         # Theme menu checkmarks are now handled dynamically in show_hamburger_menu()
     
     def show_help(self):
@@ -3360,6 +3399,15 @@ def main():
     # Apply theme (browser already determined the correct theme based on profile)
     theme_manager = ThemeManager()
     theme_manager.apply_theme(app, browser.current_theme)
+    
+    # Refresh bookmark toolbar theme after initial theme application
+    if hasattr(browser, 'single_tab') and hasattr(browser.single_tab, 'bookmark_toolbar'):
+        browser.single_tab.bookmark_toolbar.refresh_theme()
+    elif hasattr(browser, 'tabs'):
+        for i in range(browser.tabs.count()):
+            tab = browser.tabs.widget(i)
+            if hasattr(tab, 'bookmark_toolbar'):
+                tab.bookmark_toolbar.refresh_theme()
 
     browser.show()
     
