@@ -1,7 +1,13 @@
 ![Creature](./splash2.png)
 # Creature Browser
+I wanted some non-standard features and decided to see how far I could get with Claude Code and QT6 webview which is basically embedded Chromium webview as I understand it. Turns out I got pretty far in a day of hacking at it and decided to put it up here. 
 
-A web browser built with PyQt6 that supports multiple isolated profiles, custom themes, and flexible configuration options.
+My primary gripes that I wanted to address were:
+- Manage seperate profiles concurrently kind of like in [Zen Browser](https://zen-browser.app/) - but keep them in seperate windows so I don't get confused.
+- Keep it simple, less features can be more. I really like the idea of [Surf](https://surf.suckless.org/) but it's TOO simple for me. I wanted a no-tabs, single window mode with more real estate dedicated to the web page, and less to feature-cruft, hence `--minimal` in the CLI options.
+- I do tend to visit just a couple of sites 80% of the time. I never really used a complex bookmark library, but it's a nice feature that if they're easily accessible, I'd use them a lot. I did like Zen Browser's 'Essentials' feature, so I kind of borrowed that, in combination with a bookmark-bar kind of thing. It's pretty ugly so far, but the thought is nice, and it basically works, and since it uses Firefox's JSON format for storing bookmarks, you can go back and forth if that helps you. (it did me)
+
+There's a lot of cleanup to do, and I ended up adding a lot of things that I hadn't planned on, but it kind of works right now, and it was oddly performant, starting up quicker than Zen or Vivaldi in my non-scientific tests. Maybe someone else can use it as a start. 
 
 ## Features
 
