@@ -6,7 +6,7 @@
 set -e  # Exit on any error
 
 # Hardcoded path to the Creature Browser installation
-CREATURE_DIR="/home/micah/Code/browser"
+CREATURE_DIR="~/Code/browser"
 CREATURE_PY="$CREATURE_DIR/creature.py"
 
 # Check if creature.py exists
