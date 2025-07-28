@@ -1,6 +1,6 @@
 # Creature Browser
 
-A privacy-focused web browser built with PyQt6 that supports multiple isolated profiles, custom themes, and flexible configuration options.
+A web browser built with PyQt6 that supports multiple isolated profiles, custom themes, and flexible configuration options.
 
 ## Features
 
@@ -39,6 +39,7 @@ A privacy-focused web browser built with PyQt6 that supports multiple isolated p
    ```bash
    curl -LsSf https://astral.sh/uv/install.sh | sh
    ```
+   
 
 3. Create and activate the virtual environment:
    ```bash
