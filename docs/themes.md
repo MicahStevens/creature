@@ -202,15 +202,3 @@ config.profiles.work.theme = "dark"
 config.save()
 ```
 
-### Theme Inheritance
-
-While not directly supported, you can create theme families by copying base themes and modifying specific colors:
-
-```bash
-# Create a theme family
-cp themes/dark.ini themes/dark-red.ini
-cp themes/dark.ini themes/dark-green.ini
-cp themes/dark.ini themes/dark-blue.ini
-```
-
-Then modify only the accent colors in each variant.

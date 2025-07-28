@@ -1,6 +1,6 @@
 # KeePassXC Integration Guide
 
-Creature Browser includes built-in integration with KeePassXC password manager, allowing you to securely fill login forms with your saved credentials.
+Creature Browser includes built-in integration with KeePassXC password manager, allowing you to securely fill login forms with your saved credentials. This is still a little clunky, but seems to generally work. #todo
 
 ## Prerequisites
 
@@ -242,7 +242,6 @@ While there are no built-in keyboard shortcuts for KeePassXC, you can:
 Planned features for future versions:
 - Multiple database support
 - TOTP code generation
-- Advanced search and filtering
 - Automatic form detection on page load
 - Integration with KeePassXC browser protocol
 

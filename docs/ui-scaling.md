@@ -315,10 +315,6 @@ QT_SCALE_FACTOR=1.25 python creature.py
 2. Reduce `scale_factor` value
 3. Check graphics drivers
 
-## Per-Profile Scaling
-
-Currently, UI scaling is global. Future versions may support per-profile scaling for users who switch between different display environments.
-
 ## Advanced Configuration
 
 ### Custom CSS Scaling

@@ -28,7 +28,7 @@ uv pip install -e .
 
 ```bash
 # Launch the browser
-python creature.py
+uv run creature.py
 ```
 
 This will:
@@ -40,25 +40,25 @@ This will:
 
 ### Open a Website
 ```bash
-python creature.py https://github.com
+uv run creature.py https://github.com
 ```
 
 ### Use Different Profiles
 ```bash
 # Work profile
-python creature.py https://github.com --profile work
+uv run creature.py https://github.com --profile work
 
 # Personal browsing
-python creature.py https://reddit.com --profile personal
+uv run creature.py https://reddit.com --profile personal
 ```
 
 ### Change Themes
 ```bash
 # Dark theme for late night
-python creature.py --theme dark
+uv run creature.py --theme dark
 
 # Forest theme for relaxed browsing
-python creature.py --theme forest
+uv run creature.py --theme forest
 ```
 
 ## Setting Up Profiles
@@ -67,12 +67,12 @@ python creature.py --theme forest
 
 1. Launch with a new profile:
    ```bash
-   python creature.py --profile work
+   uv run creature.py --profile work
    ```
 
 2. Or use the profile dialog:
    ```bash
-   python creature.py https://github.com
+   uv run creature.py https://github.com
    # Select "Create New" in the dialog
    ```
 
@@ -112,20 +112,20 @@ title_suffix = Banking
 ### Multiple Profiles Open
 ```bash
 # Open different profiles in separate windows
-python creature.py --profile work --new-window &
-python creature.py --profile personal --new-window &
+uv run creature.py --profile work --new-window &
+uv run creature.py --profile personal --new-window &
 ```
 
 ### Quick Research Session
 ```bash
 # Open with a temporary profile
-python creature.py --profile research --theme dark https://scholar.google.com
+uv run creature.py --profile research --theme dark https://scholar.google.com
 ```
 
 ### Privacy-Focused Browsing
 ```bash
 # Create a privacy profile with specific settings
-python creature.py --profile private --new-window
+uv run creature.py --profile private --new-window
 ```
 
 ## Making Creature Your Default Browser
@@ -189,7 +189,7 @@ creature https://example.com
 
 3. Check for errors:
    ```bash
-   python creature.py 2>&1 | less
+   uv run creature.py 2>&1 | less
    ```
 
 ### Profile Selection Dialog Not Appearing
@@ -209,10 +209,3 @@ creature https://example.com
    python creature.py --theme dark  # Not "dark.ini"
    ```
 
-## Tips
-
-1. **Quick Profile Switch**: Use the profile dialog for fast switching
-2. **Visual Identification**: Assign different themes to each profile
-3. **Separate Contexts**: Use profiles to separate work, personal, banking, etc.
-4. **Custom Themes**: Create your own themes in the `themes/` directory
-5. **Keyboard Navigation**: Use Tab to navigate the profile dialog quickly

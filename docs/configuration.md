@@ -15,7 +15,7 @@ Creature searches for configuration in this order:
 
 3. **Current Directory**: `./config.ini`
 
-If no configuration exists, Creature will create a default configuration with all available options.
+If no configuration exists, Creature will create a default configuration in `~/.config/creature` with all available options.
 
 ## Configuration Structure
 
@@ -58,74 +58,13 @@ startpage = https://www.startpage.com/sp/search?query=%s
 searx = https://searx.org/?q=%s
 ```
 
-#### Smart URL Detection
-
-The browser automatically determines whether your input is a URL or search query:
-
-**Recognized as URLs:**
-- `github.com` → `https://github.com`
-- `https://example.com` → loads directly
-- `localhost:3000` → `https://localhost:3000`
-- `192.168.1.1` → `https://192.168.1.1`
-- `server.local` → `https://server.local` (local DNS)
-
-**Treated as Search Queries:**
-- `python tutorial` → searches using default engine
-- `how to install vim` → searches using default engine
-- `recipe for chocolate cake` → searches using default engine
-
 #### Adding Custom Search Engines
 
-You can add your own search engines by adding new entries to the `[search]` section:
+You can add your own search engines by adding new entries to the `[search]` section. This will eventually support !bang operators. #TODO
 
-```ini
-[search]
-# Custom search engines
-wikipedia = https://en.wikipedia.org/wiki/Special:Search?search=%s
-github = https://github.com/search?q=%s
-stackoverflow = https://stackoverflow.com/search?q=%s
-youtube = https://www.youtube.com/results?search_query=%s
-reddit = https://www.reddit.com/search/?q=%s
-arxiv = https://arxiv.org/search/?query=%s
-```
+
 
 **Important**: The `%s` placeholder is replaced with your search query (URL-encoded automatically).
-
-#### Search Engine Examples
-
-**Privacy-focused engines:**
-```ini
-duckduckgo = https://duckduckgo.com/?q=%s
-startpage = https://www.startpage.com/sp/search?query=%s
-searx = https://searx.org/?q=%s
-```
-
-**Regional/Language-specific:**
-```ini
-baidu = https://www.baidu.com/s?wd=%s
-yandex = https://yandex.com/search/?text=%s
-qwant = https://www.qwant.com/?q=%s
-```
-
-**Specialized searches:**
-```ini
-scholar = https://scholar.google.com/scholar?q=%s
-images = https://www.google.com/search?tbm=isch&q=%s
-news = https://news.google.com/search?q=%s
-maps = https://www.google.com/maps/search/%s
-```
-
-#### Changing the Default Search Engine
-
-To change which search engine is used by default:
-
-1. Make sure the search engine is defined in the `[search]` section
-2. Set `default_engine` to match the name exactly:
-
-```ini
-[search]
-default_engine = google  # Use Google instead of DuckDuckGo
-```
 
 ### UI Scaling Settings
 
@@ -302,31 +241,7 @@ config.general.theme = "dark"
 config.save()  # Save changes
 ```
 
-## Environment-Specific Configurations
 
-### Development Configuration
-
-```ini
-[general]
-theme = dark
-home_page = http://localhost:3000
-
-[browser]
-javascript_enabled = True
-# Enable developer tools
-```
-
-### Production Configuration
-
-```ini
-[general]
-theme = light
-home_page = https://company.com
-
-[browser]
-javascript_enabled = True
-plugins_enabled = False  # Disable plugins for security
-```
 
 ## Tips and Best Practices
 
@@ -334,20 +249,13 @@ plugins_enabled = False  # Disable plugins for security
    - Use descriptive profile names
    - Assign unique themes to each profile for visual identification
    - Set appropriate home pages for each context
-
 2. **Security Considerations**
    - Disable unnecessary features for sensitive profiles (banking)
    - Use separate profiles for different security contexts
    - Consider disabling JavaScript for high-security profiles
-
 3. **Performance Tuning**
    - Adjust Wayland settings based on your graphics setup
    - Disable unused features to reduce memory usage
-
-4. **Backup Configuration**
-   ```bash
-   cp ~/.config/creature/config.ini ~/.config/creature/config.ini.backup
-   ```
 
 ## Troubleshooting Configuration Issues
 
@@ -378,50 +286,4 @@ If profiles aren't appearing:
 2. Ensure profiles section exists
 3. Verify no syntax errors above the profiles section
 
-## Advanced Configuration
 
-### Multiple Configuration Files
-
-Use different configs for different purposes:
-
-```bash
-# Development
-python creature.py --config dev-config.ini
-
-# Testing
-python creature.py --config test-config.ini
-
-# Production
-CREATURE_CONFIG=prod-config.ini python creature.py
-```
-
-### Configuration Templates
-
-Create template configurations for different use cases:
-
-```bash
-# Create templates directory
-mkdir config-templates
-
-# Save different configurations
-cp config.ini config-templates/developer.ini
-cp config.ini config-templates/privacy-focused.ini
-cp config.ini config-templates/minimal.ini
-```
-
-### Scripting Configuration Changes
-
-```python
-#!/usr/bin/env python3
-from creature_config import CreatureConfig
-
-# Load specific config
-config = CreatureConfig()
-
-# Modify settings
-config.profiles.work.theme = "slate"
-config.profiles.personal.theme = "forest"
-
-# Save changes
-config.save()
-```
