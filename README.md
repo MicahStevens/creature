@@ -1,3 +1,4 @@
+![Creature](./splash2.png)
 # Creature Browser
 
 A web browser built with PyQt6 that supports multiple isolated profiles, custom themes, and flexible configuration options.
