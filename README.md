@@ -316,19 +316,19 @@ Bookmarks are stored in `~/.config/creature/profiles/<profile>/bookmarks.json`
 
 ```
 browser/
-   creature.py          # Main application file
-   creature_config.py   # Configuration management
-   config.spec         # Configuration specification
-   config.ini          # User configuration
-   themes/             # Theme files
-      theme.spec      # Theme specification
-      light.ini       # Built-in themes
-      dark.ini
-      ...
-   docs/               # Documentation
-      command-line-usage.md
-      themes.md
-   pyproject.toml      # Project dependencies
+␜␀␀ creature.py          # Main application file
+␜␀␀ creature_config.py   # Configuration management
+␜␀␀ config.spec         # Configuration specification
+␜␀␀ config.ini          # User configuration
+␜␀␀ themes/             # Theme files
+␂   ␜␀␀ theme.spec      # Theme specification
+␂   ␜␀␀ light.ini       # Built-in themes
+␂   ␜␀␀ dark.ini
+␂   ␔␀␀ ...
+␜␀␀ docs/               # Documentation
+␂   ␜␀␀ command-line-usage.md
+␂   ␔␀␀ themes.md
+␔␀␀ pyproject.toml      # Project dependencies
 ```
 
 ### Adding New Features
@@ -371,10 +371,9 @@ Contributions are welcome! Please:
 
 ## License
 
-[Your license here]
+MIT License 
 
 ## Acknowledgments
 
 - Built with PyQt6 and Qt WebEngine
 - Configuration management via ConfigObj
-- Inspired by privacy-focused browsers
