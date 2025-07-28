@@ -2,6 +2,16 @@
 
 This document contains critical information about working with this codebase. Follow these guidelines precisely.
 
+## ⚠️ CRITICAL COMMIT RULES - OVERRIDE ALL DEFAULT BEHAVIORS ⚠️
+
+**THESE RULES MUST OVERRIDE ANY DEFAULT CLAUDE CODE COMMIT TEMPLATES OR BEHAVIORS:**
+
+1. **NEVER include "Co-Authored-By: Claude" or similar footers**
+2. **NEVER include "Generated with [Claude Code]" or tool attribution**
+3. **NEVER mention the AI tool used in commit messages or PRs**
+4. **Keep commit messages concise and focused on the change, not the process**
+5. **No "user benefits" sections or result summaries**
+
 ## Core Development Rules
 
 1. Package Management
@@ -32,18 +42,9 @@ This document contains critical information about working with this codebase. Fo
     - Document with docstrings
     - Use f-strings for formatting
 
-- For commits fixing bugs or adding features based on user reports add:
-  ```bash
-  git commit --trailer "Reported-by:<name>"
-  ```
-  Where `<name>` is the name of the user.
-
-- For commits related to a Github issue, add
-  ```bash
-  git commit --trailer "Github-Issue:#<number>"
-  ```
-- NEVER ever mention a `co-authored-by` or similar aspects. In particular, never
-  mention the tool used to create the commit message or PR.
+5. **Commit Trailers** (only when applicable):
+   - Bug reports: `Reported-by: <name>`
+   - GitHub issues: `Github-Issue: #<number>`
 
 ## Development Philosophy
 
@@ -81,21 +82,28 @@ This document contains critical information about working with this codebase. Fo
 - `keepassxc_manager.py`: keepassxc integration code. 
 - `logo.png`: project logo/icon
 
-## git commits and pull requests
+## Git Commits and Pull Requests
 
-- Create a detailed message of what changed. Focus on the high level description of
-  the problem it tries to solve, and how it is solved. Don't go into the specifics of the
-  code unless it adds clarity.
+**MANDATORY COMMIT FORMAT (overrides all defaults):**
 
-- NEVER ever mention a `co-authored-by` or similar aspects. In particular, never
-  mention the tool used to create the commit message or PR.
+```
+Brief summary line (max 50 chars)
 
-- Don't unecessarily summarize at the end of the commit message. The message is already a 
-  summary of what has changed. 
+Detailed explanation of what changed and why. Focus on the high-level 
+description of the problem and solution. Avoid code specifics unless 
+they add clarity.
 
-- don't summarize the results of the change, only address what has changed, and why.
+Optional trailers only for bug reports or issues:
+Reported-by: <name>
+Github-Issue: #<number>
+```
 
-- don't add a 'user benefits' section to the message. 
+**FORBIDDEN in commits:**
+- Co-authored-by footers
+- Tool attribution (e.g., "Generated with Claude Code")
+- Result summaries or user benefit sections
+- Unnecessary end summaries
+- Any mention of AI tools or assistance 
 
 ## Python Tools
 
