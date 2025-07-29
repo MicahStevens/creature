@@ -1,4 +1,4 @@
-![Creature](./splash2.png)
+![Creature](./img/splash2.png)
 # Creature Browser
 
 My primary gripes that I wanted to address were:
