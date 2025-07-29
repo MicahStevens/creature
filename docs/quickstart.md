@@ -28,7 +28,7 @@ uv pip install -e .
 
 ```bash
 # Launch the browser
-uv run creature.py
+uv run python -m creature
 ```
 
 This will:
@@ -40,25 +40,25 @@ This will:
 
 ### Open a Website
 ```bash
-uv run creature.py https://github.com
+uv run python -m creature https://github.com
 ```
 
 ### Use Different Profiles
 ```bash
 # Work profile
-uv run creature.py https://github.com --profile work
+uv run python -m creature https://github.com --profile work
 
 # Personal browsing
-uv run creature.py https://reddit.com --profile personal
+uv run python -m creature https://reddit.com --profile personal
 ```
 
 ### Change Themes
 ```bash
 # Dark theme for late night
-uv run creature.py --theme dark
+uv run python -m creature --theme dark
 
 # Forest theme for relaxed browsing
-uv run creature.py --theme forest
+uv run python -m creature --theme forest
 ```
 
 ## Setting Up Profiles
@@ -67,12 +67,12 @@ uv run creature.py --theme forest
 
 1. Launch with a new profile:
    ```bash
-   uv run creature.py --profile work
+   uv run python -m creature --profile work
    ```
 
 2. Or use the profile dialog:
    ```bash
-   uv run creature.py https://github.com
+   uv run python -m creature https://github.com
    # Select "Create New" in the dialog
    ```
 
@@ -112,20 +112,20 @@ title_suffix = Banking
 ### Multiple Profiles Open
 ```bash
 # Open different profiles in separate windows
-uv run creature.py --profile work --new-window &
-uv run creature.py --profile personal --new-window &
+uv run python -m creature --profile work &
+uv run python -m creature --profile personal &
 ```
 
 ### Quick Research Session
 ```bash
 # Open with a temporary profile
-uv run creature.py --profile research --theme dark https://scholar.google.com
+uv run python -m creature --profile research --theme dark https://scholar.google.com
 ```
 
 ### Privacy-Focused Browsing
 ```bash
 # Create a privacy profile with specific settings
-uv run creature.py --profile private --new-window
+uv run python -m creature --profile private
 ```
 
 ## Making Creature Your Default Browser
@@ -189,7 +189,7 @@ creature https://example.com
 
 3. Check for errors:
    ```bash
-   uv run creature.py 2>&1 | less
+   uv run python -m creature 2>&1 | less
    ```
 
 ### Profile Selection Dialog Not Appearing
