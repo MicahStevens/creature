@@ -524,7 +524,7 @@ class BookmarkToolbar(QWidget):
         self.bookmark_manager = BookmarkManager(profile_name)
         self.favicon_manager = FaviconManager(profile_name)
         
-        self.setFixedWidth(48)  # Fixed width for vertical toolbar
+        self.setFixedWidth(52)  # Fixed width for vertical toolbar
         
         # Get current theme colors - traverse up to find the browser window
         from themes import ThemeManager
@@ -571,19 +571,20 @@ class BookmarkToolbar(QWidget):
         
         # Add bookmark button at bottom
         self.add_button = QPushButton("+")
-        self.add_button.setFixedSize(36, 36)
+        self.add_button.setFixedSize(40, 40)
         self.add_button.setToolTip("Add bookmark")
         self.add_button.setStyleSheet(f"""
             QPushButton {{
                 border: 1px solid {self.colors.get('border_color', '#ccc')};
                 border-radius: 4px;
-                background-color: {self.colors.get('button_bg', '#fff')};
+                background-color: {self.colors.get('icon_button_bg', self.colors.get('button_bg', '#fff'))};
                 color: {self.colors.get('text_color', '#666')};
-                font-size: 18px;
+                font-size: 22px;
                 font-weight: bold;
+                padding: 2px;
             }}
             QPushButton:hover {{
-                background-color: {self.colors.get('tab_hover_bg', '#e8e8e8')};
+                background-color: {self.colors.get('icon_button_hover_bg', self.colors.get('tab_hover_bg', '#e8e8e8'))};
                 border-color: {self.colors.get('accent', '#999')};
             }}
             QPushButton:pressed {{
@@ -621,6 +622,9 @@ class BookmarkToolbar(QWidget):
                 border-right: 1px solid {self.colors.get('border_color', '#ddd')};
             }}
         """)
+        
+        # Refresh all bookmark buttons
+        self.refresh_bookmarks()
     
     def refresh_bookmarks(self):
         """Refresh the bookmark display."""
@@ -676,39 +680,42 @@ class BookmarkToolbar(QWidget):
     def _create_bookmark_widget(self, bookmark, indent_level=0):
         """Create a bookmark button widget."""
         button = QPushButton()
-        button.setFixedSize(36, 36)
+        button.setFixedSize(40, 40)
         # Get URL from Firefox format (uri) or old format (url)
         url = bookmark.get('uri', bookmark.get('url', ''))
         button.setToolTip(f"{bookmark.get('title', 'Untitled')}\n{url}")
         
-        # Set favicon icon
+        # Apply consistent styling for all bookmark buttons
+        button.setStyleSheet(f"""
+            QPushButton {{
+                border: 1px solid {self.colors.get('border_color', '#ccc')};
+                border-radius: 4px;
+                background-color: {self.colors.get('icon_button_bg', self.colors.get('button_bg', '#fff'))};
+                color: {self.colors.get('text_color', '#666')};
+                font-size: 18px;
+                font-weight: bold;
+                padding: 2px;
+            }}
+            QPushButton:hover {{
+                background-color: {self.colors.get('icon_button_hover_bg', self.colors.get('tab_hover_bg', '#e8f4fd'))};
+                border-color: {self.colors.get('accent', '#0078d4')};
+            }}
+            QPushButton:pressed {{
+                background-color: {self.colors.get('accent', '#cde7f7')};
+                color: white;
+            }}
+        """)
+        
+        # Set favicon icon or text fallback
         favicon_path = self.favicon_manager.get_favicon_path(url)
         if favicon_path and Path(favicon_path).exists():
             icon = QIcon(favicon_path)
             button.setIcon(icon)
-            button.setIconSize(QSize(24, 24))
+            button.setIconSize(QSize(32, 32))
         else:
             # Use first letter of title as fallback
             title = bookmark.get('title', '?')
             button.setText(title[0].upper())
-            button.setStyleSheet(f"""
-                QPushButton {{
-                    border: 1px solid {self.colors.get('border_color', '#ccc')};
-                    border-radius: 4px;
-                    background-color: {self.colors.get('button_bg', '#fff')};
-                    color: {self.colors.get('text_color', '#666')};
-                    font-size: 14px;
-                    font-weight: bold;
-                }}
-                QPushButton:hover {{
-                    background-color: {self.colors.get('tab_hover_bg', '#e8f4fd')};
-                    border-color: {self.colors.get('accent', '#0078d4')};
-                }}
-                QPushButton:pressed {{
-                    background-color: {self.colors.get('accent', '#cde7f7')};
-                    color: white;
-                }}
-            """)
         
         # Connect click to navigation
         button.clicked.connect(lambda: self.navigate_to_bookmark(bookmark))
@@ -724,7 +731,7 @@ class BookmarkToolbar(QWidget):
     def _create_folder_widget(self, folder, indent_level):
         """Create a folder button widget with submenu functionality."""
         button = QPushButton()
-        button.setFixedSize(36, 36)
+        button.setFixedSize(40, 40)
         button.setToolTip(folder.get('title', 'Folder'))
         
         # Extract folder icon from title (Firefox format stores icon in title)
@@ -749,13 +756,14 @@ class BookmarkToolbar(QWidget):
             QPushButton {{
                 border: 1px solid {self.colors.get('border_color', '#ccc')};
                 border-radius: 4px;
-                background-color: {self.colors.get('button_bg', '#fff')};
+                background-color: {self.colors.get('icon_button_bg', self.colors.get('button_bg', '#fff'))};
                 color: {self.colors.get('text_color', '#666')};
-                font-size: 14px;
+                font-size: 18px;
                 font-weight: bold;
+                padding: 2px;
             }}
             QPushButton:hover {{
-                background-color: {self.colors.get('tab_hover_bg', '#e8f4fd')};
+                background-color: {self.colors.get('icon_button_hover_bg', self.colors.get('tab_hover_bg', '#e8f4fd'))};
                 border-color: {self.colors.get('accent', '#0078d4')};
             }}
             QPushButton:pressed {{

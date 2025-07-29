@@ -932,23 +932,72 @@ class BrowserTab(QWidget):
             self.back_btn = QPushButton("←")
             self.forward_btn = QPushButton("→")
             self.refresh_btn = QPushButton("⟳")
+            
+            # Get theme colors for navigation buttons
+            parent_browser = self.parent()
+            while parent_browser and not hasattr(parent_browser, 'theme_manager'):
+                parent_browser = parent_browser.parent()
+            
+            if parent_browser and hasattr(parent_browser, 'theme_manager'):
+                current_theme = getattr(parent_browser, 'current_theme', 'light')
+                theme = parent_browser.theme_manager.themes.get(current_theme, {})
+                colors = theme.get('colors', {}) if theme else {}
+            else:
+                colors = {}
+            
+            # Style navigation buttons with theme colors
+            nav_button_style = f"""
+                QPushButton {{
+                    border: 1px solid {colors.get('border_color', '#ccc')};
+                    border-radius: 4px;
+                    background-color: {colors.get('icon_button_bg', colors.get('button_bg', 'transparent'))};
+                    color: {colors.get('text_color', '#666')};
+                    font-size: 18px;
+                    padding: 2px 8px;
+                    min-height: 28px;
+                    min-width: 32px;
+                }}
+                QPushButton:hover {{
+                    background-color: {colors.get('icon_button_hover_bg', colors.get('tab_hover_bg', 'rgba(0, 0, 0, 0.1)'))};
+                }}
+                QPushButton:pressed {{
+                    background-color: {colors.get('accent', 'rgba(0, 0, 0, 0.2)')};
+                }}
+            """
+            self.back_btn.setStyleSheet(nav_button_style)
+            self.forward_btn.setStyleSheet(nav_button_style)
+            self.refresh_btn.setStyleSheet(nav_button_style)
 
             # SSL indicator (make it a button to match other navigation buttons)
             self.ssl_indicator = QPushButton("🔓")
             self.ssl_indicator.setToolTip("Click for SSL certificate details")
             self.ssl_indicator.clicked.connect(self.show_certificate_details)
-            self.ssl_indicator.setStyleSheet("""
-                QPushButton {
-                    border: 1px solid #ccc;
+            # Get theme colors for consistent styling
+            parent_browser = self.parent()
+            while parent_browser and not hasattr(parent_browser, 'theme_manager'):
+                parent_browser = parent_browser.parent()
+            
+            if parent_browser and hasattr(parent_browser, 'theme_manager'):
+                current_theme = getattr(parent_browser, 'current_theme', 'light')
+                theme = parent_browser.theme_manager.themes.get(current_theme, {})
+                colors = theme.get('colors', {}) if theme else {}
+            else:
+                colors = {}
+            
+            self.ssl_indicator.setStyleSheet(f"""
+                QPushButton {{
+                    border: 1px solid {colors.get('border_color', '#ccc')};
                     border-radius: 4px;
-                    background-color: transparent;
-                    font-size: 14px;
-                    padding: 6px 8px;
-                    min-height: 20px;
-                }
-                QPushButton:hover {
-                    background-color: rgba(0, 0, 0, 0.1);
-                }
+                    background-color: {colors.get('icon_button_bg', colors.get('button_bg', 'transparent'))};
+                    color: {colors.get('text_color', '#666')};
+                    font-size: 18px;
+                    padding: 2px 4px;
+                    min-height: 28px;
+                    min-width: 32px;
+                }}
+                QPushButton:hover {{
+                    background-color: {colors.get('icon_button_hover_bg', colors.get('tab_hover_bg', 'rgba(0, 0, 0, 0.1)'))};
+                }}
             """)
 
             self.url_bar = QLineEdit()
@@ -1005,6 +1054,70 @@ class BrowserTab(QWidget):
 
         # Set up keyboard shortcuts
         self.setup_shortcuts()
+    
+    def refresh_navigation_theme(self):
+        """Refresh the theme styling for navigation buttons."""
+        if self.minimal_mode:
+            return  # No navigation buttons in minimal mode
+            
+        # Get theme colors
+        parent_browser = self.parent()
+        while parent_browser and not hasattr(parent_browser, 'theme_manager'):
+            parent_browser = parent_browser.parent()
+        
+        if parent_browser and hasattr(parent_browser, 'theme_manager'):
+            current_theme = getattr(parent_browser, 'current_theme', 'light')
+            theme = parent_browser.theme_manager.themes.get(current_theme, {})
+            colors = theme.get('colors', {}) if theme else {}
+        else:
+            colors = {}
+        
+        # Update navigation button styles
+        nav_button_style = f"""
+            QPushButton {{
+                border: 1px solid {colors.get('border_color', '#ccc')};
+                border-radius: 4px;
+                background-color: {colors.get('icon_button_bg', colors.get('button_bg', 'transparent'))};
+                color: {colors.get('text_color', '#666')};
+                font-size: 18px;
+                padding: 2px 8px;
+                min-height: 28px;
+                min-width: 32px;
+            }}
+            QPushButton:hover {{
+                background-color: {colors.get('icon_button_hover_bg', colors.get('tab_hover_bg', 'rgba(0, 0, 0, 0.1)'))};
+            }}
+            QPushButton:pressed {{
+                background-color: {colors.get('accent', 'rgba(0, 0, 0, 0.2)')};
+            }}
+        """
+        
+        if hasattr(self, 'back_btn'):
+            self.back_btn.setStyleSheet(nav_button_style)
+        if hasattr(self, 'forward_btn'):
+            self.forward_btn.setStyleSheet(nav_button_style)  
+        if hasattr(self, 'refresh_btn'):
+            self.refresh_btn.setStyleSheet(nav_button_style)
+            
+        # Update SSL indicator style
+        if hasattr(self, 'ssl_indicator'):
+            self.ssl_indicator.setStyleSheet(f"""
+                QPushButton {{
+                    border: 1px solid {colors.get('border_color', '#ccc')};
+                    border-radius: 4px;
+                    background-color: {colors.get('icon_button_bg', colors.get('button_bg', 'transparent'))};
+                    color: {colors.get('text_color', '#666')};
+                    font-size: 18px;
+                    padding: 2px 4px;
+                    min-height: 28px;
+                    min-width: 32px;
+                }}
+                QPushButton:hover {{
+                    background-color: {colors.get('icon_button_hover_bg', colors.get('tab_hover_bg', 'rgba(0, 0, 0, 0.1)'))};
+                }}
+            """)
+            # Update SSL indicator based on current status after styling
+            self.update_ssl_indicator()
 
     def navigate(self):
         if self.minimal_mode:
@@ -1200,10 +1313,11 @@ class BrowserTab(QWidget):
                         border: 1px solid #4CAF50;
                         border-radius: 4px;
                         background-color: #E8F5E8;
-                        font-size: 14px;
+                        font-size: 18px;
                         color: #4CAF50;
-                        padding: 6px 8px;
-                        min-height: 20px;
+                        padding: 2px 4px;
+                        min-height: 28px;
+                        min-width: 32px;
                     }
                     QPushButton:hover {
                         background-color: #C8E6C9;
@@ -1217,10 +1331,11 @@ class BrowserTab(QWidget):
                         border: 1px solid #FF9800;
                         border-radius: 4px;
                         background-color: #FFF3E0;
-                        font-size: 14px;
+                        font-size: 18px;
                         color: #FF9800;
-                        padding: 6px 8px;
-                        min-height: 20px;
+                        padding: 2px 4px;
+                        min-height: 28px;
+                        min-width: 32px;
                     }
                     QPushButton:hover {
                         background-color: #FFE0B2;
@@ -1234,10 +1349,11 @@ class BrowserTab(QWidget):
                     border: 1px solid #F44336;
                     border-radius: 4px;
                     background-color: #FFEBEE;
-                    font-size: 14px;
+                    font-size: 18px;
                     color: #F44336;
-                    padding: 6px 8px;
-                    min-height: 20px;
+                    padding: 2px 4px;
+                    min-height: 28px;
+                    min-width: 32px;
                 }
                 QPushButton:hover {
                     background-color: #FFCDD2;
@@ -1363,12 +1479,12 @@ class CreatureBrowser(QMainWindow):
             icon = QIcon(str(logo_path))
             self.hamburger_button.setIcon(icon)
             # Let Qt handle scaling by setting the desired icon size
-            self.hamburger_button.setIconSize(QSize(36, 28))
+            self.hamburger_button.setIconSize(QSize(32, 32))
         else:
             # Fallback to text if logo not found
             self.hamburger_button.setText('☰')
 
-        self.hamburger_button.setFixedSize(40, 32)
+        self.hamburger_button.setFixedSize(40, 36)
         self.hamburger_button.setToolTip('Menu')
         self.hamburger_button.clicked.connect(self.show_hamburger_menu)
 
@@ -1377,7 +1493,7 @@ class CreatureBrowser(QMainWindow):
             QPushButton {
                 border: none;
                 background-color: transparent;
-                padding: 0px;
+                padding: 2px;
                 margin: 0px;
             }
             QPushButton:hover {
@@ -1524,6 +1640,12 @@ class CreatureBrowser(QMainWindow):
         index = self.tabs.addTab(tab, "New Tab")
         self.tabs.setCurrentIndex(index)
 
+        # Apply current theme to the new tab
+        if hasattr(tab, 'bookmark_toolbar'):
+            tab.bookmark_toolbar.refresh_theme()
+        if hasattr(tab, 'refresh_navigation_theme'):
+            tab.refresh_navigation_theme()
+
         # Update tab title when page title changes
         tab.web_view.titleChanged.connect(
             lambda title, idx=index: self.update_tab_title(idx, title)
@@ -1599,12 +1721,15 @@ class CreatureBrowser(QMainWindow):
         # Refresh bookmark toolbar theme if it exists
         if hasattr(self, 'single_tab') and hasattr(self.single_tab, 'bookmark_toolbar'):
             self.single_tab.bookmark_toolbar.refresh_theme()
+            self.single_tab.refresh_navigation_theme()
         elif hasattr(self, 'tabs'):
             # Refresh theme for all tabs
             for i in range(self.tabs.count()):
                 tab = self.tabs.widget(i)
                 if hasattr(tab, 'bookmark_toolbar'):
                     tab.bookmark_toolbar.refresh_theme()
+                if hasattr(tab, 'refresh_navigation_theme'):
+                    tab.refresh_navigation_theme()
 
         # Theme menu checkmarks are now handled dynamically in show_hamburger_menu()
 
@@ -1855,14 +1980,17 @@ def main():
     theme_manager = ThemeManager()
     theme_manager.apply_theme(app, browser.current_theme)
 
-    # Refresh bookmark toolbar theme after initial theme application
+    # Refresh bookmark toolbar and navigation theme after initial theme application
     if hasattr(browser, 'single_tab') and hasattr(browser.single_tab, 'bookmark_toolbar'):
         browser.single_tab.bookmark_toolbar.refresh_theme()
+        browser.single_tab.refresh_navigation_theme()
     elif hasattr(browser, 'tabs'):
         for i in range(browser.tabs.count()):
             tab = browser.tabs.widget(i)
             if hasattr(tab, 'bookmark_toolbar'):
                 tab.bookmark_toolbar.refresh_theme()
+            if hasattr(tab, 'refresh_navigation_theme'):
+                tab.refresh_navigation_theme()
 
     browser.show()
 
