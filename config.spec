@@ -20,22 +20,58 @@ default_profile = string(default='default')
 profile_directory = string(default='.config/creature')
 
 [search]
-# Default search engine to use for queries
-default_engine = string(default='duckduckgo')
 
-# Search engine URLs - use %s as placeholder for query
-# Available engines: google, duckduckgo, bing, startpage, searx
-google = string(default='https://www.google.com/search?q=%s')
-duckduckgo = string(default='https://duckduckgo.com/?q=%s')
-bing = string(default='https://www.bing.com/search?q=%s')
-startpage = string(default='https://www.startpage.com/sp/search?query=%s')
-searx = string(default='https://searx.org/?q=%s')
+# Search engines configuration - each engine has URL, shortcut, and default flag
+# Use %s as placeholder for query in URLs
+# Shortcuts: type in URL bar followed by space and query (e.g., 'g python tutorial')
+
+[[google]]
+url = string(default='https://www.google.com/search?q=%s')
+shortcut = string(default='g')
+default = boolean(default=False)
+
+[[duckduckgo]]
+url = string(default='https://duckduckgo.com/?q=%s')
+shortcut = string(default='ddg')
+default = boolean(default=True)
+
+[[bing]]
+url = string(default='https://www.bing.com/search?q=%s')
+shortcut = string(default='b')
+default = boolean(default=False)
+
+[[kagi]]
+url = string(default='https://kagi.com/search?q=%s')
+shortcut = string(default='k')
+default = boolean(default=False)
+
+# Shopping and E-commerce
+[[amazon]]
+url = string(default='https://www.amazon.com/s?k=%s')
+shortcut = string(default='a')
+default = boolean(default=False)
+
+[[ebay]]
+url = string(default='https://www.ebay.com/sch/i.html?_nkw=%s')
+shortcut = string(default='e')
+default = boolean(default=False)
+
+# Development and Technical
+[[github]]
+url = string(default='https://github.com/search?q=%s')
+shortcut = string(default='gh')
+default = boolean(default=False)
+
+[[mdn]]
+url = string(default='https://developer.mozilla.org/en-US/search?q=%s')
+shortcut = string(default='mdn')
+default = boolean(default=False)
 
 [window]
 # Initial window width
 width = integer(min=600, max=4000, default=1400)
 
-# Initial window height  
+# Initial window height
 height = integer(min=400, max=3000, default=900)
 
 # Initial window X position
@@ -129,7 +165,7 @@ level = option('DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL', default='WARNING
 # [profiles]
 # [[profile_name]]
 # theme = string
-# title_suffix = string  
+# title_suffix = string
 # home_page = string
 # webrtc_enabled = boolean(default=True)
 # camera_enabled = boolean(default=True)

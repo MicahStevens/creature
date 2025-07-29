@@ -3,15 +3,32 @@ import sys
 import os
 import argparse
 from pathlib import Path
-from PyQt6.QtWidgets import (QApplication, QMainWindow, QVBoxLayout,
-                            QWidget, QLineEdit, QPushButton, QHBoxLayout,
-                            QTabWidget, QToolBar, QStyleFactory, QMessageBox,
-                            QDialog, QListWidget, QDialogButtonBox, QLabel,
-                            QListWidgetItem, QSplashScreen, QTextBrowser, QFormLayout,
-                            QMenu, QScrollArea, QInputDialog)
+from PyQt6.QtWidgets import (
+    QApplication,
+    QMainWindow,
+    QVBoxLayout,
+    QWidget,
+    QLineEdit,
+    QPushButton,
+    QHBoxLayout,
+    QTabWidget,
+    QToolBar,
+    QStyleFactory,
+    QMessageBox,
+    QDialog,
+    QListWidget,
+    QDialogButtonBox,
+    QLabel,
+    QListWidgetItem,
+    QSplashScreen,
+    QTextBrowser,
+    QFormLayout,
+    QMenu,
+    QScrollArea,
+    QInputDialog,
+)
 from PyQt6.QtWebEngineWidgets import QWebEngineView
-from PyQt6.QtWebEngineCore import (QWebEngineProfile, QWebEngineSettings, QWebEngineScript,
-                                        QWebEnginePage, QWebEngineCertificateError, QWebEnginePermission)
+from PyQt6.QtWebEngineCore import QWebEngineProfile, QWebEngineSettings, QWebEngineScript, QWebEnginePage, QWebEngineCertificateError, QWebEnginePermission
 from PyQt6.QtCore import QUrl, QStandardPaths, QDir, QTimer, Qt, pyqtSignal, QSize
 from PyQt6.QtGui import QPalette, QColor, QShortcut, QKeySequence, QFont, QFontDatabase, QPixmap, QIcon, QAction
 import json
@@ -34,15 +51,8 @@ import uuid
 import time
 
 # Import refactored modules
-from utilities import (
-    generate_guid, datetime_to_firefox_timestamp, firefox_timestamp_to_datetime,
-    process_url_or_search, fetch_certificate_from_url
-)
-from ssl_handler import (
-    export_certificate_to_file, check_openssl_available, parse_certificate_with_openssl,
-    check_certificate_revocation, check_ocsp_status, check_crl_status, parse_openssl_output,
-    CertificateDetailsDialog
-)
+from utilities import generate_guid, datetime_to_firefox_timestamp, firefox_timestamp_to_datetime, process_url_or_search, fetch_certificate_from_url
+from ssl_handler import export_certificate_to_file, check_openssl_available, parse_certificate_with_openssl, check_certificate_revocation, check_ocsp_status, check_crl_status, parse_openssl_output, CertificateDetailsDialog
 from bookmarks import BookmarkManager, FaviconManager, BookmarkToolbar
 from profiles import ProfileManager
 from themes import ThemeManager
@@ -53,15 +63,13 @@ CREATURE_VERSION = "0.1.0"
 CREATURE_AUTHOR = "micah@benchtop.tech"
 CREATURE_LICENSE = "MIT"
 
+
 # Configure logging
 def setup_logging():
     """Configure logging based on config settings."""
     log_level = getattr(logging, creature_config.logging.level, logging.WARNING)
-    logging.basicConfig(
-        level=log_level,
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-        datefmt='%Y-%m-%d %H:%M:%S'
-    )
+    logging.basicConfig(level=log_level, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
+
 
 # Set up logging early
 setup_logging()
@@ -77,6 +85,7 @@ logger = logging.getLogger(__name__)
 # - ThemeManager -> themes.py
 # - SSLAwarePage -> web_engine.py
 # - CertificateDetailsDialog -> ssl_handler.py
+
 
 class KeePassXCWebEngineView(QWebEngineView):
     """Custom QWebEngineView with KeePassXC integration."""
@@ -100,7 +109,7 @@ class KeePassXCWebEngineView(QWebEngineView):
             return
 
         try:
-            with open(bridge_script_path, 'r', encoding='utf-8') as f:
+            with open(bridge_script_path, "r", encoding="utf-8") as f:
                 bridge_code = f.read()
             logger.debug(f"Bridge script loaded, {len(bridge_code)} characters")
         except Exception as e:
@@ -122,6 +131,7 @@ class KeePassXCWebEngineView(QWebEngineView):
         """Override context menu to add KeePassXC options."""
         # Create our own context menu since PyQt6 doesn't have createStandardContextMenu
         from PyQt6.QtWidgets import QMenu
+
         menu = QMenu(self)
 
         # Store the global position immediately to ensure accuracy
@@ -176,15 +186,15 @@ class KeePassXCWebEngineView(QWebEngineView):
         """Show context menu with KeePassXC options if applicable."""
         # Add KeePassXC options only if enabled and configured
         if keepass_manager.enabled and keepass_manager.config.show_context_menu:
-            if element_info and element_info.get('isFormField'):
+            if element_info and element_info.get("isFormField"):
                 menu.addSeparator()
 
                 # Add KeePassXC actions
-                if element_info.get('isPassword'):
+                if element_info.get("isPassword"):
                     fill_password_action = QAction("Fill Password from KeePassXC", self)
                     fill_password_action.triggered.connect(lambda: self._fill_password(event.pos()))
                     menu.addAction(fill_password_action)
-                elif element_info.get('isUsername') or element_info.get('isEmail'):
+                elif element_info.get("isUsername") or element_info.get("isEmail"):
                     fill_username_action = QAction("Fill Username from KeePassXC", self)
                     fill_username_action.triggered.connect(lambda: self._fill_username(event.pos()))
                     menu.addAction(fill_username_action)
@@ -214,12 +224,8 @@ class KeePassXCWebEngineView(QWebEngineView):
 
         # Prompt for master password
         from PyQt6.QtWidgets import QInputDialog, QLineEdit
-        password, ok = QInputDialog.getText(
-            self,
-            "KeePassXC Master Password",
-            "Enter your KeePassXC master password:",
-            QLineEdit.EchoMode.Password
-        )
+
+        password, ok = QInputDialog.getText(self, "KeePassXC Master Password", "Enter your KeePassXC master password:", QLineEdit.EchoMode.Password)
 
         if ok and password:
             if keepass_manager.test_database_access(password):
@@ -474,14 +480,14 @@ class KeePassXCWebEngineView(QWebEngineView):
     def _fill_form_callback(self, result):
         """Callback for form filling result."""
         if isinstance(result, dict):
-            if result.get('success'):
+            if result.get("success"):
                 message = "Login form filled successfully"
-                if result.get('errors'):
+                if result.get("errors"):
                     message += f"\nWarnings: {', '.join(result['errors'])}"
                 QMessageBox.information(self, "KeePassXC", message)
             else:
                 error_msg = "Failed to fill login form"
-                if result.get('errors'):
+                if result.get("errors"):
                     error_msg += f"\nErrors: {', '.join(result['errors'])}"
                 QMessageBox.warning(self, "Error", error_msg)
         else:
@@ -572,7 +578,8 @@ class KeePassXCWebEngineView(QWebEngineView):
         """Escape string for safe JavaScript injection."""
         if not value:
             return ""
-        return value.replace("'", "\\'").replace('"', '\\"').replace('\n', '\\n').replace('\r', '\\r')
+        return value.replace("'", "\\'").replace('"', '\\"').replace("\n", "\\n").replace("\r", "\\r")
+
 
 class SplashScreen(QSplashScreen):
     """Custom splash screen with Creature branding."""
@@ -593,41 +600,30 @@ class SplashScreen(QSplashScreen):
         super().__init__(pixmap)
 
         # Set window flags to ensure visibility and floating behavior
-        self.setWindowFlags(Qt.WindowType.SplashScreen |
-                           Qt.WindowType.FramelessWindowHint |
-                           Qt.WindowType.WindowStaysOnTopHint |
-                           Qt.WindowType.Tool)
+        self.setWindowFlags(Qt.WindowType.SplashScreen | Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.Tool)
 
         # Set window class for Wayland/Hyprland recognition
         self.setProperty("_q_wayland_window_type", "splash")
 
         # Set window class name for window managers
-        if hasattr(self, 'setWindowClassName'):
+        if hasattr(self, "setWindowClassName"):
             self.setWindowClassName("creature-splash")
 
         # Center the splash screen on the screen
         from PyQt6.QtGui import QGuiApplication
+
         screen = QGuiApplication.primaryScreen().geometry()
         size = self.geometry()
         self.move((screen.width() - size.width()) // 2, (screen.height() - size.height()) // 2)
 
         # Show loading message with better styling
-        self.showMessage(f"Starting Creature Browser v{CREATURE_VERSION}...",
-                        Qt.AlignmentFlag.AlignBottom | Qt.AlignmentFlag.AlignCenter,
-                        QColor(255, 255, 255))
+        self.showMessage(f"Starting Creature Browser v{CREATURE_VERSION}...", Qt.AlignmentFlag.AlignBottom | Qt.AlignmentFlag.AlignCenter, QColor(255, 255, 255))
 
         # Set up timer for loading messages
         self.timer = QTimer()
         self.timer.timeout.connect(self.update_message)
         self.message_index = 0
-        self.messages = [
-            f"Starting Creature Browser v{CREATURE_VERSION}...",
-            "Loading configuration...",
-            "Initializing browser engine...",
-            "Setting up profiles...",
-            "Applying theme...",
-            "Ready!"
-        ]
+        self.messages = [f"Starting Creature Browser v{CREATURE_VERSION}...", "Loading configuration...", "Initializing browser engine...", "Setting up profiles...", "Applying theme...", "Ready!"]
         self.timer.start(300)  # Update every 300ms
 
         # Additional Wayland/Hyprland compatibility
@@ -636,12 +632,11 @@ class SplashScreen(QSplashScreen):
     def update_message(self):
         """Update the loading message."""
         if self.message_index < len(self.messages):
-            self.showMessage(self.messages[self.message_index],
-                            Qt.AlignmentFlag.AlignBottom | Qt.AlignmentFlag.AlignCenter,
-                            QColor(255, 255, 255))
+            self.showMessage(self.messages[self.message_index], Qt.AlignmentFlag.AlignBottom | Qt.AlignmentFlag.AlignCenter, QColor(255, 255, 255))
             self.message_index += 1
         else:
             self.timer.stop()
+
 
 class AboutDialog(QDialog):
     """About dialog showing version, author, and license information."""
@@ -746,11 +741,8 @@ class AboutDialog(QDialog):
 
         except Exception as e:
             # Fallback: show message box with path
-            QMessageBox.information(
-                self,
-                "Configuration Path",
-                f"Configuration file location:\n{self.config_path}\n\nUnable to open folder: {e}"
-            )
+            QMessageBox.information(self, "Configuration Path", f"Configuration file location:\n{self.config_path}\n\nUnable to open folder: {e}")
+
 
 class HelpDialog(QDialog):
     """Help dialog displaying documentation from markdown files."""
@@ -823,8 +815,8 @@ class HelpDialog(QDialog):
         # Add links to available documentation files
         if docs_dir.exists():
             for doc_file in sorted(docs_dir.glob("*.md")):
-                doc_name = doc_file.stem.replace('-', ' ').title()
-                help_content += f'<li>{doc_name} - <code>{doc_file.name}</code></li>\n'
+                doc_name = doc_file.stem.replace("-", " ").title()
+                help_content += f"<li>{doc_name} - <code>{doc_file.name}</code></li>\n"
 
         help_content += """
         </ul>
@@ -842,6 +834,7 @@ class HelpDialog(QDialog):
         """
 
         self.text_browser.setHtml(help_content)
+
 
 class ProfileSelectionDialog(QDialog):
     """Dialog for selecting a browser profile."""
@@ -886,10 +879,7 @@ class ProfileSelectionDialog(QDialog):
         layout.addLayout(new_profile_layout)
 
         # Buttons
-        buttons = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Ok |
-            QDialogButtonBox.StandardButton.Cancel
-        )
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
@@ -916,6 +906,7 @@ class ProfileSelectionDialog(QDialog):
             self.selected_profile = current_item.text()
         super().accept()
 
+
 class BrowserTab(QWidget):
     def __init__(self, profile, url=None, profile_name=None, minimal_mode=False):
         super().__init__()
@@ -932,36 +923,36 @@ class BrowserTab(QWidget):
             self.back_btn = QPushButton("←")
             self.forward_btn = QPushButton("→")
             self.refresh_btn = QPushButton("⟳")
-            
+
             # Get theme colors for navigation buttons
             parent_browser = self.parent()
-            while parent_browser and not hasattr(parent_browser, 'theme_manager'):
+            while parent_browser and not hasattr(parent_browser, "theme_manager"):
                 parent_browser = parent_browser.parent()
-            
-            if parent_browser and hasattr(parent_browser, 'theme_manager'):
-                current_theme = getattr(parent_browser, 'current_theme', 'light')
+
+            if parent_browser and hasattr(parent_browser, "theme_manager"):
+                current_theme = getattr(parent_browser, "current_theme", "light")
                 theme = parent_browser.theme_manager.themes.get(current_theme, {})
-                colors = theme.get('colors', {}) if theme else {}
+                colors = theme.get("colors", {}) if theme else {}
             else:
                 colors = {}
-            
+
             # Style navigation buttons with theme colors
             nav_button_style = f"""
                 QPushButton {{
-                    border: 1px solid {colors.get('border_color', '#ccc')};
+                    border: 1px solid {colors.get("border_color", "#ccc")};
                     border-radius: 4px;
-                    background-color: {colors.get('icon_button_bg', colors.get('button_bg', 'transparent'))};
-                    color: {colors.get('text_color', '#666')};
+                    background-color: {colors.get("icon_button_bg", colors.get("button_bg", "transparent"))};
+                    color: {colors.get("text_color", "#666")};
                     font-size: 18px;
                     padding: 2px 8px;
                     min-height: 28px;
                     min-width: 32px;
                 }}
                 QPushButton:hover {{
-                    background-color: {colors.get('icon_button_hover_bg', colors.get('tab_hover_bg', 'rgba(0, 0, 0, 0.1)'))};
+                    background-color: {colors.get("icon_button_hover_bg", colors.get("tab_hover_bg", "rgba(0, 0, 0, 0.1)"))};
                 }}
                 QPushButton:pressed {{
-                    background-color: {colors.get('accent', 'rgba(0, 0, 0, 0.2)')};
+                    background-color: {colors.get("accent", "rgba(0, 0, 0, 0.2)")};
                 }}
             """
             self.back_btn.setStyleSheet(nav_button_style)
@@ -974,29 +965,29 @@ class BrowserTab(QWidget):
             self.ssl_indicator.clicked.connect(self.show_certificate_details)
             # Get theme colors for consistent styling
             parent_browser = self.parent()
-            while parent_browser and not hasattr(parent_browser, 'theme_manager'):
+            while parent_browser and not hasattr(parent_browser, "theme_manager"):
                 parent_browser = parent_browser.parent()
-            
-            if parent_browser and hasattr(parent_browser, 'theme_manager'):
-                current_theme = getattr(parent_browser, 'current_theme', 'light')
+
+            if parent_browser and hasattr(parent_browser, "theme_manager"):
+                current_theme = getattr(parent_browser, "current_theme", "light")
                 theme = parent_browser.theme_manager.themes.get(current_theme, {})
-                colors = theme.get('colors', {}) if theme else {}
+                colors = theme.get("colors", {}) if theme else {}
             else:
                 colors = {}
-            
+
             self.ssl_indicator.setStyleSheet(f"""
                 QPushButton {{
-                    border: 1px solid {colors.get('border_color', '#ccc')};
+                    border: 1px solid {colors.get("border_color", "#ccc")};
                     border-radius: 4px;
-                    background-color: {colors.get('icon_button_bg', colors.get('button_bg', 'transparent'))};
-                    color: {colors.get('text_color', '#666')};
+                    background-color: {colors.get("icon_button_bg", colors.get("button_bg", "transparent"))};
+                    color: {colors.get("text_color", "#666")};
                     font-size: 18px;
                     padding: 2px 4px;
                     min-height: 28px;
                     min-width: 32px;
                 }}
                 QPushButton:hover {{
-                    background-color: {colors.get('icon_button_hover_bg', colors.get('tab_hover_bg', 'rgba(0, 0, 0, 0.1)'))};
+                    background-color: {colors.get("icon_button_hover_bg", colors.get("tab_hover_bg", "rgba(0, 0, 0, 0.1)"))};
                 }}
             """)
 
@@ -1016,14 +1007,7 @@ class BrowserTab(QWidget):
         self.web_view.setPage(self.ssl_page)
 
         # Initialize SSL status
-        self.ssl_status = {
-            'is_secure': False,
-            'certificate_valid': True,
-            'certificate_info': None,
-            'errors': [],
-            'revocation_checked': False,
-            'revocation_status': None
-        }
+        self.ssl_status = {"is_secure": False, "certificate_valid": True, "certificate_info": None, "errors": [], "revocation_checked": False, "revocation_status": None}
 
         # Create horizontal layout for bookmark toolbar and web view
         content_layout = QHBoxLayout()
@@ -1054,66 +1038,66 @@ class BrowserTab(QWidget):
 
         # Set up keyboard shortcuts
         self.setup_shortcuts()
-    
+
     def refresh_navigation_theme(self):
         """Refresh the theme styling for navigation buttons."""
         if self.minimal_mode:
             return  # No navigation buttons in minimal mode
-            
+
         # Get theme colors
         parent_browser = self.parent()
-        while parent_browser and not hasattr(parent_browser, 'theme_manager'):
+        while parent_browser and not hasattr(parent_browser, "theme_manager"):
             parent_browser = parent_browser.parent()
-        
-        if parent_browser and hasattr(parent_browser, 'theme_manager'):
-            current_theme = getattr(parent_browser, 'current_theme', 'light')
+
+        if parent_browser and hasattr(parent_browser, "theme_manager"):
+            current_theme = getattr(parent_browser, "current_theme", "light")
             theme = parent_browser.theme_manager.themes.get(current_theme, {})
-            colors = theme.get('colors', {}) if theme else {}
+            colors = theme.get("colors", {}) if theme else {}
         else:
             colors = {}
-        
+
         # Update navigation button styles
         nav_button_style = f"""
             QPushButton {{
-                border: 1px solid {colors.get('border_color', '#ccc')};
+                border: 1px solid {colors.get("border_color", "#ccc")};
                 border-radius: 4px;
-                background-color: {colors.get('icon_button_bg', colors.get('button_bg', 'transparent'))};
-                color: {colors.get('text_color', '#666')};
+                background-color: {colors.get("icon_button_bg", colors.get("button_bg", "transparent"))};
+                color: {colors.get("text_color", "#666")};
                 font-size: 18px;
                 padding: 2px 8px;
                 min-height: 28px;
                 min-width: 32px;
             }}
             QPushButton:hover {{
-                background-color: {colors.get('icon_button_hover_bg', colors.get('tab_hover_bg', 'rgba(0, 0, 0, 0.1)'))};
+                background-color: {colors.get("icon_button_hover_bg", colors.get("tab_hover_bg", "rgba(0, 0, 0, 0.1)"))};
             }}
             QPushButton:pressed {{
-                background-color: {colors.get('accent', 'rgba(0, 0, 0, 0.2)')};
+                background-color: {colors.get("accent", "rgba(0, 0, 0, 0.2)")};
             }}
         """
-        
-        if hasattr(self, 'back_btn'):
+
+        if hasattr(self, "back_btn"):
             self.back_btn.setStyleSheet(nav_button_style)
-        if hasattr(self, 'forward_btn'):
-            self.forward_btn.setStyleSheet(nav_button_style)  
-        if hasattr(self, 'refresh_btn'):
+        if hasattr(self, "forward_btn"):
+            self.forward_btn.setStyleSheet(nav_button_style)
+        if hasattr(self, "refresh_btn"):
             self.refresh_btn.setStyleSheet(nav_button_style)
-            
+
         # Update SSL indicator style
-        if hasattr(self, 'ssl_indicator'):
+        if hasattr(self, "ssl_indicator"):
             self.ssl_indicator.setStyleSheet(f"""
                 QPushButton {{
-                    border: 1px solid {colors.get('border_color', '#ccc')};
+                    border: 1px solid {colors.get("border_color", "#ccc")};
                     border-radius: 4px;
-                    background-color: {colors.get('icon_button_bg', colors.get('button_bg', 'transparent'))};
-                    color: {colors.get('text_color', '#666')};
+                    background-color: {colors.get("icon_button_bg", colors.get("button_bg", "transparent"))};
+                    color: {colors.get("text_color", "#666")};
                     font-size: 18px;
                     padding: 2px 4px;
                     min-height: 28px;
                     min-width: 32px;
                 }}
                 QPushButton:hover {{
-                    background-color: {colors.get('icon_button_hover_bg', colors.get('tab_hover_bg', 'rgba(0, 0, 0, 0.1)'))};
+                    background-color: {colors.get("icon_button_hover_bg", colors.get("tab_hover_bg", "rgba(0, 0, 0, 0.1)"))};
                 }}
             """)
             # Update SSL indicator based on current status after styling
@@ -1138,6 +1122,10 @@ class BrowserTab(QWidget):
         home_url = creature_config.general.home_page
         self.navigate_to(home_url)
 
+    def reload_bypass_cache(self):
+        """Reload the current page bypassing cache (equivalent to Ctrl+F5)."""
+        self.web_view.page().triggerAction(QWebEnginePage.WebAction.ReloadAndBypassCache)
+
     def exit_browser(self):
         """Exit the browser application."""
         # Find the parent browser window and close it
@@ -1150,6 +1138,7 @@ class BrowserTab(QWidget):
         else:
             # Fallback: quit the application
             from PyQt6.QtWidgets import QApplication
+
             QApplication.instance().quit()
 
     def setup_shortcuts(self):
@@ -1166,11 +1155,19 @@ class BrowserTab(QWidget):
         exit_shortcut = QShortcut(QKeySequence("Ctrl+X"), self)
         exit_shortcut.activated.connect(self.exit_browser)
 
+        # F5 to reload page
+        reload_shortcut = QShortcut(QKeySequence("F5"), self)
+        reload_shortcut.activated.connect(self.web_view.reload)
+
+        # Ctrl+F5 to reload page bypassing cache
+        reload_bypass_cache_shortcut = QShortcut(QKeySequence("Ctrl+F5"), self)
+        reload_bypass_cache_shortcut.activated.connect(self.reload_bypass_cache)
+
     def focus_url_bar(self):
         """Focus the URL bar and select all text, or show modal URL bar in minimal mode."""
         if self.minimal_mode:
             self.show_modal_url_bar()
-        elif hasattr(self, 'url_bar'):
+        elif hasattr(self, "url_bar"):
             self.url_bar.setFocus()
             self.url_bar.selectAll()
 
@@ -1185,30 +1182,27 @@ class BrowserTab(QWidget):
 
         # Get current theme colors for dialog styling
         parent_browser = self.parent()
-        while parent_browser and not hasattr(parent_browser, 'theme_manager'):
+        while parent_browser and not hasattr(parent_browser, "theme_manager"):
             parent_browser = parent_browser.parent()
 
-        if parent_browser and hasattr(parent_browser, 'theme_manager'):
-            current_theme = getattr(parent_browser, 'current_theme', 'light')
+        if parent_browser and hasattr(parent_browser, "theme_manager"):
+            current_theme = getattr(parent_browser, "current_theme", "light")
             theme = parent_browser.theme_manager.themes.get(current_theme, {})
-            colors = theme.get('colors', {}) if theme else {}
+            colors = theme.get("colors", {}) if theme else {}
         else:
             colors = {}
 
         # Apply theme to dialog
         dialog.setStyleSheet(f"""
             QDialog {{
-                background-color: {colors.get('window_bg', '#ffffff')};
-                color: {colors.get('text_color', '#000000')};
+                background-color: {colors.get("window_bg", "#ffffff")};
+                color: {colors.get("text_color", "#000000")};
             }}
         """)
 
         # Center the dialog on the browser window
         parent_geometry = self.parent().geometry() if self.parent() else self.geometry()
-        dialog.move(
-            parent_geometry.x() + (parent_geometry.width() - dialog.width()) // 2,
-            parent_geometry.y() + (parent_geometry.height() - dialog.height()) // 2
-        )
+        dialog.move(parent_geometry.x() + (parent_geometry.width() - dialog.width()) // 2, parent_geometry.y() + (parent_geometry.height() - dialog.height()) // 2)
 
         layout = QVBoxLayout(dialog)
         layout.setSpacing(10)
@@ -1228,10 +1222,10 @@ class BrowserTab(QWidget):
             QLineEdit {{
                 padding: 8px 12px;
                 font-size: 14px;
-                border: 2px solid {colors.get('accent', '#0078d4')};
+                border: 2px solid {colors.get("accent", "#0078d4")};
                 border-radius: 6px;
-                background-color: {colors.get('url_bar_bg', '#ffffff')};
-                color: {colors.get('text_color', '#000000')};
+                background-color: {colors.get("url_bar_bg", "#ffffff")};
+                color: {colors.get("text_color", "#000000")};
             }}
         """)
         layout.addWidget(url_input)
@@ -1248,7 +1242,7 @@ class BrowserTab(QWidget):
         go_btn.setDefault(True)  # Make this the default button for Enter key
         go_btn.setStyleSheet(f"""
             QPushButton {{
-                background-color: {colors.get('accent', '#0078d4')};
+                background-color: {colors.get("accent", "#0078d4")};
                 color: white;
                 padding: 6px 20px;
                 border: none;
@@ -1256,7 +1250,7 @@ class BrowserTab(QWidget):
                 font-weight: bold;
             }}
             QPushButton:hover {{
-                background-color: {colors.get('tab_hover_bg', '#106ebe')};
+                background-color: {colors.get("tab_hover_bg", "#106ebe")};
             }}
         """)
         button_layout.addWidget(go_btn)
@@ -1286,8 +1280,8 @@ class BrowserTab(QWidget):
             self.url_bar.setText(url.toString())
 
         # Check if connection is secure
-        is_secure = url.scheme().lower() == 'https'
-        self.ssl_status['is_secure'] = is_secure
+        is_secure = url.scheme().lower() == "https"
+        self.ssl_status["is_secure"] = is_secure
 
         logger.debug(f"URL changed to: {url.toString()}, is_secure: {is_secure}")
 
@@ -1305,8 +1299,8 @@ class BrowserTab(QWidget):
         if self.minimal_mode:
             return  # No SSL indicator in minimal mode
 
-        if self.ssl_status['is_secure']:
-            if self.ssl_status['certificate_valid']:
+        if self.ssl_status["is_secure"]:
+            if self.ssl_status["certificate_valid"]:
                 self.ssl_indicator.setText("🔒")
                 self.ssl_indicator.setStyleSheet("""
                     QPushButton {
@@ -1371,13 +1365,13 @@ class BrowserTab(QWidget):
         """Cleanup BrowserTab to prevent memory leaks."""
         try:
             # Disconnect SSL page signals
-            if hasattr(self, 'ssl_page'):
+            if hasattr(self, "ssl_page"):
                 self.ssl_page.sslStatusChanged.disconnect()
                 # Clear page reference before deletion
                 self.ssl_page = None
 
             # Clear web view page
-            if hasattr(self, 'web_view') and self.web_view:
+            if hasattr(self, "web_view") and self.web_view:
                 self.web_view.setPage(None)
 
             logger.debug(f"BrowserTab cleanup completed for profile: {self.profile_name}")
@@ -1396,9 +1390,9 @@ class CreatureBrowser(QMainWindow):
 
         # Get profile-specific theme if configured
         profile_theme = ""
-        if hasattr(creature_config, 'profiles') and self.profile_name in creature_config.profiles:
+        if hasattr(creature_config, "profiles") and self.profile_name in creature_config.profiles:
             profile_config = creature_config.profiles[self.profile_name]
-            profile_theme = profile_config.get('theme', '')
+            profile_theme = profile_config.get("theme", "")
 
         # Use profile theme, then command line theme, then general theme
         theme = theme or profile_theme or creature_config.general.theme
@@ -1406,16 +1400,16 @@ class CreatureBrowser(QMainWindow):
 
         # Set up profile
         profile_dir = creature_config.general.profile_directory
-        if not profile_dir.startswith('/'):
+        if not profile_dir.startswith("/"):
             profile_dir = Path.home() / profile_dir
         self.profile_manager = ProfileManager(profile_dir)
         self.profile = self.profile_manager.create_profile(self.profile_name)
 
         # Get profile-specific title suffix
         title_suffix = ""
-        if hasattr(creature_config, 'profiles') and self.profile_name in creature_config.profiles:
+        if hasattr(creature_config, "profiles") and self.profile_name in creature_config.profiles:
             profile_config = creature_config.profiles[self.profile_name]
-            title_suffix = profile_config.get('title_suffix', '')
+            title_suffix = profile_config.get("title_suffix", "")
 
         # Build window title
         if title_suffix:
@@ -1429,12 +1423,7 @@ class CreatureBrowser(QMainWindow):
         if logo_path.exists():
             self.setWindowIcon(QIcon(str(logo_path)))
 
-        self.setGeometry(
-            creature_config.window.x,
-            creature_config.window.y,
-            creature_config.window.width,
-            creature_config.window.height
-        )
+        self.setGeometry(creature_config.window.x, creature_config.window.y, creature_config.window.width, creature_config.window.height)
 
         # Apply theme
         self.theme_manager = ThemeManager()
@@ -1474,7 +1463,7 @@ class CreatureBrowser(QMainWindow):
         self.hamburger_button = QPushButton(self)
 
         # Load logo.png as the button icon
-        logo_path = Path(__file__).parent / "img" / 'icon.png'
+        logo_path = Path(__file__).parent / "img" / "icon.png"
         if logo_path.exists():
             icon = QIcon(str(logo_path))
             self.hamburger_button.setIcon(icon)
@@ -1482,10 +1471,10 @@ class CreatureBrowser(QMainWindow):
             self.hamburger_button.setIconSize(QSize(32, 32))
         else:
             # Fallback to text if logo not found
-            self.hamburger_button.setText('☰')
+            self.hamburger_button.setText("☰")
 
         self.hamburger_button.setFixedSize(40, 36)
-        self.hamburger_button.setToolTip('Menu')
+        self.hamburger_button.setToolTip("Menu")
         self.hamburger_button.clicked.connect(self.show_hamburger_menu)
 
         # Remove border and background styling with minimal padding
@@ -1506,9 +1495,9 @@ class CreatureBrowser(QMainWindow):
         """)
 
         # Create close window button
-        self.close_button = QPushButton('✕', self)
+        self.close_button = QPushButton("✕", self)
         self.close_button.setFixedSize(32, 32)
-        self.close_button.setToolTip('Close Window')
+        self.close_button.setToolTip("Close Window")
         self.close_button.clicked.connect(self.close)
 
         # Style the close button similar to hamburger button
@@ -1531,7 +1520,7 @@ class CreatureBrowser(QMainWindow):
             }
         """)
 
-        if not self.force_new_window and hasattr(self, 'tabs'):
+        if not self.force_new_window and hasattr(self, "tabs"):
             # Create a container widget for both buttons
             from PyQt6.QtWidgets import QWidget, QHBoxLayout
             from PyQt6.QtCore import Qt
@@ -1575,28 +1564,28 @@ class CreatureBrowser(QMainWindow):
 
         # File section
         if not self.force_new_window:
-            new_tab_action = QAction('New Tab', self)
-            new_tab_action.setShortcut('Ctrl+T')
+            new_tab_action = QAction("New Tab", self)
+            new_tab_action.setShortcut("Ctrl+T")
             new_tab_action.triggered.connect(self.add_new_tab)
             menu.addAction(new_tab_action)
             menu.addSeparator()
 
-        new_window_action = QAction('New Window', self)
-        new_window_action.setShortcut('Ctrl+N')
+        new_window_action = QAction("New Window", self)
+        new_window_action.setShortcut("Ctrl+N")
         new_window_action.triggered.connect(self.new_window)
         menu.addAction(new_window_action)
 
         menu.addSeparator()
 
         # Profile section
-        profile_info_action = QAction(f'Profile: {self.profile_name.capitalize()} - Info', self)
+        profile_info_action = QAction(f"Profile: {self.profile_name.capitalize()} - Info", self)
         profile_info_action.triggered.connect(self.show_profile_info)
         menu.addAction(profile_info_action)
 
         menu.addSeparator()
 
         # Theme section
-        theme_submenu = menu.addMenu('Themes')
+        theme_submenu = menu.addMenu("Themes")
         for theme_name in self.theme_manager.themes.keys():
             theme_action = QAction(theme_name.capitalize(), self)
             theme_action.setCheckable(True)
@@ -1607,20 +1596,20 @@ class CreatureBrowser(QMainWindow):
         menu.addSeparator()
 
         # Help section
-        help_action = QAction('Help...', self)
-        help_action.setShortcut('F1')
+        help_action = QAction("Help...", self)
+        help_action.setShortcut("F1")
         help_action.triggered.connect(self.show_help)
         menu.addAction(help_action)
 
-        about_action = QAction('About Creature Browser', self)
+        about_action = QAction("About Creature Browser", self)
         about_action.triggered.connect(self.show_about)
         menu.addAction(about_action)
 
         menu.addSeparator()
 
         # Quit action at bottom
-        quit_action = QAction('Quit', self)
-        quit_action.setShortcut('Ctrl+Q')
+        quit_action = QAction("Quit", self)
+        quit_action.setShortcut("Ctrl+Q")
         quit_action.triggered.connect(self.quit_application)
         menu.addAction(quit_action)
 
@@ -1641,19 +1630,17 @@ class CreatureBrowser(QMainWindow):
         self.tabs.setCurrentIndex(index)
 
         # Apply current theme to the new tab
-        if hasattr(tab, 'bookmark_toolbar'):
+        if hasattr(tab, "bookmark_toolbar"):
             tab.bookmark_toolbar.refresh_theme()
-        if hasattr(tab, 'refresh_navigation_theme'):
+        if hasattr(tab, "refresh_navigation_theme"):
             tab.refresh_navigation_theme()
 
         # Update tab title when page title changes
-        tab.web_view.titleChanged.connect(
-            lambda title, idx=index: self.update_tab_title(idx, title)
-        )
+        tab.web_view.titleChanged.connect(lambda title, idx=index: self.update_tab_title(idx, title))
 
     def update_tab_title(self, index, title):
         try:
-            if hasattr(self, 'tabs') and self.tabs and index < self.tabs.count():
+            if hasattr(self, "tabs") and self.tabs and index < self.tabs.count():
                 short_title = title[:20] + "..." if len(title) > 20 else title
                 self.tabs.setTabText(index, short_title)
         except (RuntimeError, AttributeError) as e:
@@ -1662,18 +1649,18 @@ class CreatureBrowser(QMainWindow):
             pass
 
     def close_tab(self, index):
-        if hasattr(self, 'tabs'):
+        if hasattr(self, "tabs"):
             try:
                 # Get the tab widget before removing it
                 tab_widget = self.tabs.widget(index)
-                if tab_widget and hasattr(tab_widget, 'web_view'):
+                if tab_widget and hasattr(tab_widget, "web_view"):
                     # Disconnect titleChanged signal to prevent late updates
                     tab_widget.web_view.titleChanged.disconnect()
 
                 if self.tabs.count() > 1:
                     self.tabs.removeTab(index)
                 else:
-                    if creature_config.browser.tab_close_behavior == 'close_window':
+                    if creature_config.browser.tab_close_behavior == "close_window":
                         self.close()
                     else:
                         # Keep window open with last tab
@@ -1690,7 +1677,7 @@ class CreatureBrowser(QMainWindow):
         new_browser = CreatureBrowser(self.profile_name, self.force_new_window)
         new_browser.show()
 
-        if hasattr(new_browser, 'single_tab'):
+        if hasattr(new_browser, "single_tab"):
             new_browser.single_tab.navigate_to(url)
         else:
             new_browser.add_new_tab(url)
@@ -1719,16 +1706,16 @@ class CreatureBrowser(QMainWindow):
         self.current_theme = theme_name
 
         # Refresh bookmark toolbar theme if it exists
-        if hasattr(self, 'single_tab') and hasattr(self.single_tab, 'bookmark_toolbar'):
+        if hasattr(self, "single_tab") and hasattr(self.single_tab, "bookmark_toolbar"):
             self.single_tab.bookmark_toolbar.refresh_theme()
             self.single_tab.refresh_navigation_theme()
-        elif hasattr(self, 'tabs'):
+        elif hasattr(self, "tabs"):
             # Refresh theme for all tabs
             for i in range(self.tabs.count()):
                 tab = self.tabs.widget(i)
-                if hasattr(tab, 'bookmark_toolbar'):
+                if hasattr(tab, "bookmark_toolbar"):
                     tab.bookmark_toolbar.refresh_theme()
-                if hasattr(tab, 'refresh_navigation_theme'):
+                if hasattr(tab, "refresh_navigation_theme"):
                     tab.refresh_navigation_theme()
 
         # Theme menu checkmarks are now handled dynamically in show_hamburger_menu()
@@ -1745,7 +1732,7 @@ class CreatureBrowser(QMainWindow):
 
     def setup_tab_shortcuts(self):
         """Set up keyboard shortcuts for tab cycling and window management."""
-        if not hasattr(self, 'tabs'):
+        if not hasattr(self, "tabs"):
             return
 
         # Ctrl+T - New tab
@@ -1766,7 +1753,7 @@ class CreatureBrowser(QMainWindow):
 
     def next_tab(self):
         """Switch to the next tab."""
-        if not hasattr(self, 'tabs') or self.tabs.count() <= 1:
+        if not hasattr(self, "tabs") or self.tabs.count() <= 1:
             return
 
         current_index = self.tabs.currentIndex()
@@ -1775,7 +1762,7 @@ class CreatureBrowser(QMainWindow):
 
     def previous_tab(self):
         """Switch to the previous tab."""
-        if not hasattr(self, 'tabs') or self.tabs.count() <= 1:
+        if not hasattr(self, "tabs") or self.tabs.count() <= 1:
             return
 
         current_index = self.tabs.currentIndex()
@@ -1786,10 +1773,10 @@ class CreatureBrowser(QMainWindow):
         """Cleanup CreatureBrowser to prevent race conditions during shutdown."""
         try:
             # Disconnect all tab title change signals
-            if hasattr(self, 'tabs') and self.tabs:
+            if hasattr(self, "tabs") and self.tabs:
                 for i in range(self.tabs.count()):
                     tab_widget = self.tabs.widget(i)
-                    if tab_widget and hasattr(tab_widget, 'web_view'):
+                    if tab_widget and hasattr(tab_widget, "web_view"):
                         try:
                             tab_widget.web_view.titleChanged.disconnect()
                         except (RuntimeError, TypeError):
@@ -1827,11 +1814,9 @@ def setup_wayland_compatibility():
 
     # Enable Wayland-specific features from config (only if on Wayland)
     if is_wayland:
-        os.environ.setdefault("QT_WAYLAND_DISABLE_WINDOWDECORATION",
-                             "1" if creature_config.wayland.disable_window_decoration else "0")
+        os.environ.setdefault("QT_WAYLAND_DISABLE_WINDOWDECORATION", "1" if creature_config.wayland.disable_window_decoration else "0")
 
-    os.environ.setdefault("QT_AUTO_SCREEN_SCALE_FACTOR",
-                         "1" if creature_config.wayland.auto_screen_scale_factor else "0")
+    os.environ.setdefault("QT_AUTO_SCREEN_SCALE_FACTOR", "1" if creature_config.wayland.auto_screen_scale_factor else "0")
 
     # Fix graphics rendering issues
     chromium_flags = []
@@ -1845,24 +1830,19 @@ def setup_wayland_compatibility():
     # Graphics acceleration and WebGL fixes - more conservative for media stability
     if creature_config.wayland.disable_hardware_acceleration:
         # Complete hardware acceleration disable for maximum stability
-        chromium_flags.extend([
-            "--disable-gpu",
-            "--disable-gpu-compositing",
-            "--disable-accelerated-2d-canvas",
-            "--disable-accelerated-video-decode",
-            "--disable-gpu-rasterization",
-            "--disable-features=VizDisplayCompositor"
-        ])
+        chromium_flags.extend(["--disable-gpu", "--disable-gpu-compositing", "--disable-accelerated-2d-canvas", "--disable-accelerated-video-decode", "--disable-gpu-rasterization", "--disable-features=VizDisplayCompositor"])
     else:
         # Partial acceleration with media stability focus
-        chromium_flags.extend([
-            "--ignore-gpu-blocklist",
-            "--disable-gpu-rasterization",  # Disable GPU raster to avoid conflicts with media
-            "--enable-webgl",
-            "--disable-accelerated-2d-canvas",  # Disable 2D canvas acceleration to prevent black screens
-            "--disable-gpu-compositing",  # Prevent GPU compositing issues during media device changes
-            "--disable-features=VizDisplayCompositor"  # Use software compositor for stability
-        ])
+        chromium_flags.extend(
+            [
+                "--ignore-gpu-blocklist",
+                "--disable-gpu-rasterization",  # Disable GPU raster to avoid conflicts with media
+                "--enable-webgl",
+                "--disable-accelerated-2d-canvas",  # Disable 2D canvas acceleration to prevent black screens
+                "--disable-gpu-compositing",  # Prevent GPU compositing issues during media device changes
+                "--disable-features=VizDisplayCompositor",  # Use software compositor for stability
+            ]
+        )
 
     # Only add Wayland-specific Chromium flags if we're actually on Wayland
     if is_wayland and ui_config.enable_high_dpi_scaling:
@@ -1875,20 +1855,22 @@ def setup_wayland_compatibility():
     chromium_flags.append("--disable-dev-shm-usage")  # Helps with shared memory issues
 
     # Media stability flags to prevent black screen during device changes
-    chromium_flags.extend([
-        "--disable-background-media-suspend",  # Prevent media suspension
-        "--disable-renderer-backgrounding",  # Keep renderer active
-        "--disable-backgrounding-occluded-windows",  # Prevent window backgrounding
-        "--disable-ipc-flooding-protection",  # Prevent IPC issues during media changes
-        "--enable-experimental-web-platform-features",  # Enable latest WebRTC features
-        "--allow-running-insecure-content",  # Allow mixed content for media
-        "--enable-features=NetworkService,CookiesWithoutSameSiteMustBeSecure",  # Enable modern network and cookies
-        "--enable-javascript-harmony",  # Enable modern JavaScript features
-        "--enable-blink-features=WebAssembly",  # Enable WebAssembly for complex apps
-        "--disable-blink-features=BlockCredentialedSubresources",  # Allow credentialed requests
-        "--disable-site-isolation-trials",  # Allow cross-site cookies for Google auth
-        "--enable-dom-distiller"  # Enable content processing
-    ])
+    chromium_flags.extend(
+        [
+            "--disable-background-media-suspend",  # Prevent media suspension
+            "--disable-renderer-backgrounding",  # Keep renderer active
+            "--disable-backgrounding-occluded-windows",  # Prevent window backgrounding
+            "--disable-ipc-flooding-protection",  # Prevent IPC issues during media changes
+            "--enable-experimental-web-platform-features",  # Enable latest WebRTC features
+            "--allow-running-insecure-content",  # Allow mixed content for media
+            "--enable-features=NetworkService,CookiesWithoutSameSiteMustBeSecure",  # Enable modern network and cookies
+            "--enable-javascript-harmony",  # Enable modern JavaScript features
+            "--enable-blink-features=WebAssembly",  # Enable WebAssembly for complex apps
+            "--disable-blink-features=BlockCredentialedSubresources",  # Allow credentialed requests
+            "--disable-site-isolation-trials",  # Allow cross-site cookies for Google auth
+            "--enable-dom-distiller",  # Enable content processing
+        ]
+    )
 
     if chromium_flags:
         os.environ.setdefault("QTWEBENGINE_CHROMIUM_FLAGS", " ".join(chromium_flags))
@@ -1897,31 +1879,23 @@ def setup_wayland_compatibility():
     if creature_config.wayland.disable_sandbox:
         os.environ.setdefault("QTWEBENGINE_DISABLE_SANDBOX", "1")
 
+
 def main():
     parser = argparse.ArgumentParser(description="Creature Browser with Profile Support")
-    parser.add_argument("--profile", "-p", default=None,
-                       help="Profile name for sandboxing (default: from config)")
-    parser.add_argument("--new-window", "-w", action="store_true",
-                       help="Force new windows instead of tabs")
-    parser.add_argument("--theme", "-t", default=None,
-                       choices=["light", "dark", "nord", "slate", "earthy", "violet", "forest", "autumn"],
-                       help="Theme to use (default: from config)")
-    parser.add_argument("url", nargs="?", default=None,
-                       help="URL to open (optional)")
-    parser.add_argument("--profile-dir", default=None,
-                       help="Custom directory for profiles")
-    parser.add_argument("--config", "-c", default=None,
-                       help="Path to configuration file")
-    parser.add_argument("--no-profile-prompt", action="store_true",
-                       help="Don't prompt for profile selection")
-    parser.add_argument("--minimal", "-m", action="store_true",
-                       help="Minimal mode: no tabs, no menu, no navigation bar")
+    parser.add_argument("--profile", "-p", default=None, help="Profile name for sandboxing (default: from config)")
+    parser.add_argument("--new-window", "-w", action="store_true", help="Force new windows instead of tabs")
+    parser.add_argument("--theme", "-t", default=None, choices=["light", "dark", "nord", "slate", "earthy", "violet", "forest", "autumn"], help="Theme to use (default: from config)")
+    parser.add_argument("url", nargs="?", default=None, help="URL to open (optional)")
+    parser.add_argument("--profile-dir", default=None, help="Custom directory for profiles")
+    parser.add_argument("--config", "-c", default=None, help="Path to configuration file")
+    parser.add_argument("--no-profile-prompt", action="store_true", help="Don't prompt for profile selection")
+    parser.add_argument("--minimal", "-m", action="store_true", help="Minimal mode: no tabs, no menu, no navigation bar")
 
     args = parser.parse_args()
 
     # Set config path if provided
     if args.config:
-        os.environ['CREATURE_CONFIG'] = args.config
+        os.environ["CREATURE_CONFIG"] = args.config
 
     # Setup Wayland compatibility and fix graphics issues
     setup_wayland_compatibility()
@@ -1942,6 +1916,7 @@ def main():
 
         # Ensure splash screen shows for minimum 2 seconds
         import time
+
         start_time = time.time()
         while time.time() - start_time < 2.0:
             app.processEvents()
@@ -1953,7 +1928,7 @@ def main():
     # If URL provided and no profile specified, show profile selection dialog
     if args.url and not profile_name and not args.no_profile_prompt:
         profile_dir = creature_config.general.profile_directory
-        if not profile_dir.startswith('/'):
+        if not profile_dir.startswith("/"):
             profile_dir = Path.home() / profile_dir
         profile_manager = ProfileManager(profile_dir)
 
@@ -1969,27 +1944,22 @@ def main():
         profile_name = creature_config.general.default_profile
 
     # Create browser with command line overrides
-    browser = CreatureBrowser(
-        profile_name=profile_name,
-        force_new_window=args.new_window if args.new_window else None,
-        theme=args.theme,
-        minimal_mode=args.minimal
-    )
+    browser = CreatureBrowser(profile_name=profile_name, force_new_window=args.new_window if args.new_window else None, theme=args.theme, minimal_mode=args.minimal)
 
     # Apply theme (browser already determined the correct theme based on profile)
     theme_manager = ThemeManager()
     theme_manager.apply_theme(app, browser.current_theme)
 
     # Refresh bookmark toolbar and navigation theme after initial theme application
-    if hasattr(browser, 'single_tab') and hasattr(browser.single_tab, 'bookmark_toolbar'):
+    if hasattr(browser, "single_tab") and hasattr(browser.single_tab, "bookmark_toolbar"):
         browser.single_tab.bookmark_toolbar.refresh_theme()
         browser.single_tab.refresh_navigation_theme()
-    elif hasattr(browser, 'tabs'):
+    elif hasattr(browser, "tabs"):
         for i in range(browser.tabs.count()):
             tab = browser.tabs.widget(i)
-            if hasattr(tab, 'bookmark_toolbar'):
+            if hasattr(tab, "bookmark_toolbar"):
                 tab.bookmark_toolbar.refresh_theme()
-            if hasattr(tab, 'refresh_navigation_theme'):
+            if hasattr(tab, "refresh_navigation_theme"):
                 tab.refresh_navigation_theme()
 
     browser.show()
@@ -2000,12 +1970,13 @@ def main():
 
     # Load initial URL
     initial_url = args.url or creature_config.general.home_page
-    if hasattr(browser, 'single_tab'):
+    if hasattr(browser, "single_tab"):
         browser.single_tab.navigate_to(initial_url)
     else:
         browser.add_new_tab(initial_url)
 
     sys.exit(app.exec())
+
 
 if __name__ == "__main__":
     main()

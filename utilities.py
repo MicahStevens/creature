@@ -81,10 +81,51 @@ def process_url_or_search(input_text):
     if input_text.startswith(('http://', 'https://')):
         return input_text, False
     
-    # Otherwise, treat as search query
-    search_engine = creature_config.search.default_engine
-    search_url_template = getattr(creature_config.search, search_engine)
-    search_url = search_url_template.replace('%s', urllib.parse.quote_plus(input_text))
+    # Check for search engine shortcuts (e.g., 'g python tutorial')
+    words = input_text.split(' ', 1)  # Split into at most 2 parts
+    if len(words) >= 2:
+        potential_shortcut = words[0].lower()
+        query = words[1]
+        
+        # Look through all search engines for a matching shortcut
+        if hasattr(creature_config, 'search'):
+            for engine_name in creature_config.search.keys():
+                engine_config = getattr(creature_config.search, engine_name)
+                
+                # Skip non-engine items (should be ConfigSection objects)
+                if not hasattr(engine_config, 'shortcut'):
+                    continue
+                    
+                if engine_config.shortcut.lower() == potential_shortcut:
+                    search_url = engine_config.url.replace('%s', urllib.parse.quote_plus(query))
+                    logger.debug(f"Using search shortcut '{potential_shortcut}' for engine '{engine_name}': {search_url}")
+                    return search_url, True
+    
+    # Otherwise, treat as regular search query using default engine
+    default_engine = None
+    default_url = None
+    
+    # Find the default search engine
+    if hasattr(creature_config, 'search'):
+        for engine_name in creature_config.search.keys():
+            engine_config = getattr(creature_config.search, engine_name)
+            
+            # Skip non-engine items
+            if not hasattr(engine_config, 'default'):
+                continue
+                
+            if engine_config.default:
+                default_engine = engine_name
+                default_url = engine_config.url
+                break
+    
+    # Fallback to duckduckgo if no default found
+    if not default_url:
+        default_url = 'https://duckduckgo.com/?q=%s'
+        logger.warning("No default search engine found, using DuckDuckGo")
+    
+    search_url = default_url.replace('%s', urllib.parse.quote_plus(input_text))
+    logger.debug(f"Using default search engine '{default_engine}': {search_url}")
     
     return search_url, True
 
