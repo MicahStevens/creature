@@ -124,25 +124,6 @@ Bookmarks are stored in `~/.config/creature/profiles/<profile>/bookmarks.json`
 
 ## Development
 
-### Project Structure
-
-```
-browser/
-␜␀␀ creature.py          # Main application file
-␜␀␀ creature_config.py   # Configuration management
-␜␀␀ config.spec         # Configuration specification
-␜␀␀ config.ini          # User configuration
-␜␀␀ themes/             # Theme files
-␂   ␜␀␀ theme.spec      # Theme specification
-␂   ␜␀␀ light.ini       # Built-in themes
-␂   ␜␀␀ dark.ini
-␂   ␔␀␀ ...
-␜␀␀ docs/               # Documentation
-␂   ␜␀␀ command-line-usage.md
-␂   ␔␀␀ themes.md
-␔␀␀ pyproject.toml      # Project dependencies
-```
-
 ### Adding New Features
 
 1. Configuration options go in `config.spec`
