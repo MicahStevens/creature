@@ -1,4 +1,4 @@
-![Creature](./img/splash2.png)
+![Creature](./data/images/splash2.png)
 # Creature Browser
 
 My primary gripes that I wanted to address were:
@@ -12,15 +12,15 @@ Here's some screenshots:
 
 **Light Theme**
 
-![screenshot1](./img/screenshot1.png)
+![screenshot1](./data/images/screenshots/screenshot1.png)
 
 **Dark Theme**
 
-![screenshot2](./img/screenshot2.png)
+![screenshot2](./data/images/screenshots/screenshot2.png)
 
 **Minimal Mode**
 
-![screenshot3](./img/screenshot3.png)
+![screenshot3](./data/images/screenshots/screenshot3.png)
 
 
 
@@ -37,9 +37,33 @@ Here's some screenshots:
 - **ConfigObj Integration** - Flexible configuration with validation
 
 
+## Project Structure
+
+Creature Browser follows Python packaging best practices with a clean, organized structure:
+
+```
+creature/
+├── creature/              # Main Python package
+│   ├── browser/          # Core browser functionality
+│   ├── ui/               # User interface components
+│   ├── config/           # Configuration management
+│   ├── security/         # Security features (SSL, KeePassXC)
+│   └── utils/            # Utility functions
+├── data/                 # Resource files
+│   ├── config/          # Default configuration and themes
+│   ├── icons/           # Application icons
+│   ├── images/          # Screenshots and graphics
+│   └── scripts/         # JavaScript and other scripts
+├── scripts/             # Executable scripts
+├── tests/               # Test suite
+└── packaging/           # Platform-specific packaging files
+```
+
+This structure supports multiple deployment methods including system packages, AppImage, and Flatpak.
+
 # Documentation
 - [Installation, quickstart](docs/quickstart.md)
-- [Command Line Usage](docs/command-line-usage.md)
+- [Command Line Usage](docs/command-line-usage.md)  
 - [Configuration Files](docs/configuration.md)
 - [Keyboard-shortcuts](docs/keyboard-shortcuts.md)
 - [UI scaling](docs/ui-scaling.md)
@@ -49,19 +73,55 @@ Here's some screenshots:
 
 ## Advanced Usage
 
-### System Installation
+### Running the Application
 
-For system-wide access, copy the launcher script:
+The application can be run in several ways:
 
 ```bash
-# Copy launcher script to system bin directory
-sudo cp creature.sh /usr/local/bin/creature
-sudo chmod +x /usr/local/bin/creature
+# Using uv (recommended during development)
+uv run python -m creature
 
-# Now you can run from anywhere
-creature --minimal
-creature --profile work https://github.com
+# Using the executable script
+./scripts/creature
+
+# After installation as a package
+creature
 ```
+
+Command line options:
+```bash
+# Launch with specific profile
+creature --profile work
+
+# Launch in minimal mode
+creature --minimal
+
+# Open specific URL
+creature https://github.com
+
+# Use custom theme
+creature --theme dark
+```
+
+### System Installation
+
+For system-wide installation, you can:
+
+1. **Install as a Python package** (recommended):
+   ```bash
+   # Install in development mode
+   uv pip install -e .
+   
+   # Or install from the repository
+   pip install git+https://github.com/yourusername/creature.git
+   ```
+
+2. **Copy the executable script**:
+   ```bash
+   # Copy launcher script to system bin directory
+   sudo cp scripts/creature /usr/local/bin/creature
+   sudo chmod +x /usr/local/bin/creature
+   ```
 
 ### Setting as Default Browser
 
@@ -70,10 +130,11 @@ creature --profile work https://github.com
    cat > ~/.local/share/applications/creature.desktop << EOF
    [Desktop Entry]
    Name=Creature Browser
-   Exec=/usr/local/bin/creature %u
+   Exec=creature %u
    Type=Application
    Categories=Network;WebBrowser;
    MimeType=text/html;x-scheme-handler/http;x-scheme-handler/https;
+   Icon=creature
    EOF
    ```
 
@@ -86,9 +147,9 @@ creature --profile work https://github.com
 
 ```bash
 # Launch different profiles in separate windows
-python creature.py --profile work --new-window &
-python creature.py --profile personal --new-window &
-python creature.py --profile banking --new-window &
+creature --profile work &
+creature --profile personal &
+creature --profile banking &
 ```
 
 ### Minimal Mode
@@ -97,10 +158,10 @@ For distraction-free browsing, use minimal mode:
 
 ```bash
 # Clean interface with only bookmark sidebar and web content
-python creature.py --minimal
+creature --minimal
 
 # Minimal mode with specific URL and theme
-python creature.py --minimal --theme dark https://example.com
+creature --minimal --theme dark https://example.com
 ```
 
 **Minimal Mode Features:**

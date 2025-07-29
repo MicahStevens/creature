@@ -12,7 +12,7 @@ from PyQt6.QtWebEngineCore import (
     QWebEnginePermission
 )
 
-from creature_config import config as creature_config
+from creature.config.manager import config as creature_config
 
 logger = logging.getLogger(__name__)
 

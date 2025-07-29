@@ -2,6 +2,7 @@ import logging
 import os
 from pathlib import Path
 from collections.abc import Iterator, KeysView, ValuesView
+import importlib.resources
 
 from configobj import ConfigObj, Section
 from validate import Validator
@@ -138,7 +139,11 @@ class CreatureConfig:
         self._config_file_path = configfile  # Store path for access
 
         # Load config with validation against spec
-        spec_path = Path(__file__).parent / 'config.spec'
+        try:
+            spec_path = importlib.resources.files('creature').parent / 'data' / 'config' / 'config.spec'
+        except Exception:
+            # Fallback to relative path
+            spec_path = Path(__file__).parent.parent.parent / 'data' / 'config' / 'config.spec'
         if spec_path.exists():
             # Load config with spec validation, but handle profiles separately
             self._config = ConfigObj(str(configfile), configspec=str(spec_path))
@@ -217,6 +222,14 @@ class CreatureConfig:
 
         # Current directory
         search_locations.append(Path('config.ini'))
+        
+        # Default config in data directory (as template)
+        try:
+            data_config_path = importlib.resources.files('creature').parent / 'data' / 'config' / 'config.ini'
+        except Exception:
+            # Fallback to relative path
+            data_config_path = Path(__file__).parent.parent.parent / 'data' / 'config' / 'config.ini'
+        search_locations.append(data_config_path)
 
         # Find first existing file
         for config_path in search_locations:

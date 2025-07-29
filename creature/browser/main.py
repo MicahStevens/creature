@@ -3,6 +3,7 @@ import sys
 import os
 import argparse
 from pathlib import Path
+import importlib.resources
 from PyQt6.QtWidgets import (
     QApplication,
     QMainWindow,
@@ -42,26 +43,24 @@ from urllib.parse import urlparse
 import requests
 import base64
 from datetime import datetime, timedelta
-from creature_config import config as creature_config
 from configobj import ConfigObj
 from validate import Validator
-from keepassxc_manager import keepass_manager, KeePassXCError
 import logging
 import uuid
 import time
 
 # Import refactored modules
-from utilities import generate_guid, datetime_to_firefox_timestamp, firefox_timestamp_to_datetime, process_url_or_search, fetch_certificate_from_url
-from ssl_handler import export_certificate_to_file, check_openssl_available, parse_certificate_with_openssl, check_certificate_revocation, check_ocsp_status, check_crl_status, parse_openssl_output, CertificateDetailsDialog
-from bookmarks import BookmarkManager, FaviconManager, BookmarkToolbar
-from profiles import ProfileManager
-from themes import ThemeManager
-from web_engine import SSLAwarePage
+from creature.config.manager import config as creature_config
+from creature.security.keepassxc import keepass_manager, KeePassXCError
+from creature.utils.helpers import generate_guid, datetime_to_firefox_timestamp, firefox_timestamp_to_datetime, process_url_or_search, fetch_certificate_from_url
+from creature.security.ssl_handler import export_certificate_to_file, check_openssl_available, parse_certificate_with_openssl, check_certificate_revocation, check_ocsp_status, check_crl_status, parse_openssl_output, CertificateDetailsDialog
+from creature.ui.bookmarks import BookmarkManager, FaviconManager, BookmarkToolbar
+from creature.config.profiles import ProfileManager
+from creature.ui.themes import ThemeManager
+from creature.browser.web_engine import SSLAwarePage
 
 # Application constants
-CREATURE_VERSION = "0.1.0"
-CREATURE_AUTHOR = "micah@benchtop.tech"
-CREATURE_LICENSE = "MIT"
+from creature import CREATURE_VERSION, CREATURE_AUTHOR, CREATURE_LICENSE
 
 
 # Configure logging
@@ -78,6 +77,31 @@ setup_logging()
 logger = logging.getLogger(__name__)
 
 # Utility functions have been moved to separate modules (utilities.py and ssl_handler.py)
+
+# Resource loading utilities
+def get_data_path(filename):
+    """Get path to a data file using importlib.resources."""
+    try:
+        if '/' in filename:
+            # Handle subdirectories in data/
+            parts = filename.split('/')
+            subdir = parts[0]
+            file = '/'.join(parts[1:])
+            if subdir == 'scripts':
+                return importlib.resources.files('creature').parent / 'data' / 'scripts' / file
+            elif subdir == 'icons':
+                return importlib.resources.files('creature').parent / 'data' / 'icons' / file
+            elif subdir == 'images':
+                return importlib.resources.files('creature').parent / 'data' / 'images' / file
+            else:
+                return importlib.resources.files('creature').parent / 'data' / filename
+        else:
+            # File in data root
+            return importlib.resources.files('creature').parent / 'data' / filename
+    except Exception as e:
+        logger.debug(f"Resource loading failed for {filename}: {e}")
+        # Fallback to relative path from current file
+        return Path(__file__).parent.parent.parent / 'data' / filename
 
 # Classes have been moved to separate modules:
 # - BookmarkManager, FaviconManager, BookmarkToolbar -> bookmarks.py
@@ -102,7 +126,7 @@ class KeePassXCWebEngineView(QWebEngineView):
             return
 
         # Read the bridge script
-        bridge_script_path = Path(__file__).parent / "keepassxc_bridge.js"
+        bridge_script_path = get_data_path("scripts/keepassxc_bridge.js")
         logger.debug(f"Looking for bridge script at: {bridge_script_path}")
         if not bridge_script_path.exists():
             logger.debug("KeePassXC bridge script not found")
@@ -650,7 +674,7 @@ class AboutDialog(QDialog):
         layout = QVBoxLayout(self)
 
         # Logo
-        logo_path = Path(__file__).parent / "img" / "logo.png"
+        logo_path = get_data_path("icons/logo.png")
         if logo_path.exists():
             logo_label = QLabel()
             pixmap = QPixmap(str(logo_path))
@@ -1883,7 +1907,6 @@ def setup_wayland_compatibility():
 def main():
     parser = argparse.ArgumentParser(description="Creature Browser with Profile Support")
     parser.add_argument("--profile", "-p", default=None, help="Profile name for sandboxing (default: from config)")
-    parser.add_argument("--new-window", "-w", action="store_true", help="Force new windows instead of tabs")
     parser.add_argument("--theme", "-t", default=None, choices=["light", "dark", "nord", "slate", "earthy", "violet", "forest", "autumn"], help="Theme to use (default: from config)")
     parser.add_argument("url", nargs="?", default=None, help="URL to open (optional)")
     parser.add_argument("--profile-dir", default=None, help="Custom directory for profiles")
@@ -1903,7 +1926,7 @@ def main():
     app = QApplication(sys.argv)
 
     # Set application icon
-    logo_path = Path(__file__).parent / "img" / "logo.png"
+    logo_path = get_data_path("icons/logo.png")
     if logo_path.exists():
         app.setWindowIcon(QIcon(str(logo_path)))
 
@@ -1944,7 +1967,7 @@ def main():
         profile_name = creature_config.general.default_profile
 
     # Create browser with command line overrides
-    browser = CreatureBrowser(profile_name=profile_name, force_new_window=args.new_window if args.new_window else None, theme=args.theme, minimal_mode=args.minimal)
+    browser = CreatureBrowser(profile_name=profile_name, force_new_window=None, theme=args.theme, minimal_mode=args.minimal)
 
     # Apply theme (browser already determined the correct theme based on profile)
     theme_manager = ThemeManager()

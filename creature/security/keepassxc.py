@@ -11,7 +11,7 @@ import re
 from urllib.parse import urlparse
 from pathlib import Path
 from typing import List, Dict, Optional, Tuple
-from creature_config import config as creature_config
+from creature.config.manager import config as creature_config
 import logging
 
 # Create logger for this module

@@ -5,6 +5,7 @@ Handles application theming, UI scaling, and visual styling.
 
 import logging
 from pathlib import Path
+import importlib.resources
 
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFont, QPalette, QColor
@@ -13,14 +14,19 @@ from PyQt6.QtWidgets import QStyleFactory, QApplication
 from configobj import ConfigObj
 from validate import Validator
 
-from creature_config import config as creature_config
+from creature.config.manager import config as creature_config
 
 logger = logging.getLogger(__name__)
 
 
 class ThemeManager:
     def __init__(self):
-        self.themes_dir = Path(__file__).parent / "themes"
+        # Use data directory for themes
+        try:
+            self.themes_dir = importlib.resources.files('creature').parent / 'data' / 'config' / 'themes'
+        except Exception:
+            # Fallback to relative path
+            self.themes_dir = Path(__file__).parent.parent.parent / 'data' / 'config' / 'themes'
         self.theme_spec = self.themes_dir / "theme.spec"
         self.themes = {}
         

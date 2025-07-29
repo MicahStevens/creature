@@ -1,0 +1,19 @@
+#!/usr/bin/env python3
+"""
+Executable script for Creature Browser.
+This script can be installed system-wide and provides the creature command.
+"""
+
+import sys
+from pathlib import Path
+
+# Add the parent directory to Python path to find the creature package
+# This allows the script to work when run directly from the repository
+script_dir = Path(__file__).parent
+project_root = script_dir.parent
+sys.path.insert(0, str(project_root))
+
+from creature import main
+
+if __name__ == "__main__":
+    main()

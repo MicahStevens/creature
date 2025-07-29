@@ -15,7 +15,7 @@ from PyQt6.QtCore import Qt, QSize, QUrl
 from PyQt6.QtGui import QIcon, QPixmap, QAction
 from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QScrollArea, QMenu, QInputDialog, QMessageBox
 
-from utilities import generate_guid, datetime_to_firefox_timestamp, firefox_timestamp_to_datetime
+from creature.utils.helpers import generate_guid, datetime_to_firefox_timestamp, firefox_timestamp_to_datetime
 
 logger = logging.getLogger(__name__)
 
@@ -447,7 +447,7 @@ class BookmarkToolbar(QWidget):
         self.setFixedWidth(44)  # Very tight width - only 4px over button width
 
         # Get current theme colors - traverse up to find the browser window
-        from themes import ThemeManager
+        from creature.ui.themes import ThemeManager
 
         self.theme_manager = ThemeManager()
         parent_browser = parent
@@ -937,7 +937,7 @@ class BookmarkToolbar(QWidget):
     def add_bookmark_to_folder(self, title, url, target_folder):
         """Add a bookmark to a specific folder."""
         from datetime import datetime
-        from utilities import generate_guid, datetime_to_firefox_timestamp
+        from creature.utils.helpers import generate_guid, datetime_to_firefox_timestamp
 
         now = datetime_to_firefox_timestamp()
 

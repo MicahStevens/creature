@@ -11,6 +11,12 @@ dependencies = [
     "requests>=2.32.4",
 ]
 
+[project.scripts]
+creature = "creature:main"
+
+[project.gui-scripts]
+creature-browser = "creature:main"
+
 # Ruff configuration
 [tool.ruff]
 line-length = 250

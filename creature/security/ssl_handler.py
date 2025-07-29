@@ -406,7 +406,7 @@ class CertificateDetailsDialog(QDialog):
     
     def add_detailed_cert_info(self, layout):
         """Add detailed certificate information if available."""
-        from utilities import fetch_certificate_from_url
+        from creature.utils.helpers import fetch_certificate_from_url
         
         logger.debug("Fetching detailed certificate information...")
         
@@ -542,7 +542,7 @@ class CertificateDetailsDialog(QDialog):
     
     def export_certificate(self):
         """Export the SSL certificate to a temporary file and open it with system tools."""
-        from utilities import fetch_certificate_from_url
+        from creature.utils.helpers import fetch_certificate_from_url
         
         # We need to get the current URL from the parent browser tab
         parent_tab = self.parent()

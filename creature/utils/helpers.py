@@ -11,7 +11,7 @@ import uuid
 from datetime import datetime
 from urllib.parse import urlparse
 
-from creature_config import config as creature_config
+from creature.config.manager import config as creature_config
 import logging
 
 logger = logging.getLogger(__name__)
