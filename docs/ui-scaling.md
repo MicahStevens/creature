@@ -36,7 +36,7 @@ scale_factor = 1.25  # 25% larger than normal
 
 ```ini
 [ui]
-font_size_adjustment = 2  # 2 points larger
+base_font_size = 12  # 2 points larger
 ```
 
 **Values:**
@@ -150,7 +150,7 @@ font_style = italic
 ```ini
 [ui]
 scale_factor = 1.5
-font_size_adjustment = 2
+base_font_size = 12
 enable_high_dpi_scaling = True
 ```
 
@@ -172,7 +172,7 @@ force_dpi = 144
 **Solution**:
 ```ini
 [ui]
-font_size_adjustment = 4
+base_font_size = 12
 ```
 
 ### Interface Too Large
@@ -195,7 +195,7 @@ font_size_adjustment = -1
 [ui]
 font_family = "Inter"
 font_weight = 500
-font_size_adjustment = 1
+base_font_size = 12
 ```
 
 ### Programming/Technical Use
@@ -218,7 +218,7 @@ font_weight = normal
 [ui]
 font_family = "OpenDyslexic"
 font_weight = normal
-font_size_adjustment = 2
+base_font_size = 12
 ```
 
 ### Mixed Display Setup
@@ -248,25 +248,25 @@ enable_high_dpi_scaling = False
 **For 1080p displays (24" or smaller):**
 ```ini
 scale_factor = 1.0
-font_size_adjustment = 0
+base_font_size = 12
 ```
 
 **For 1440p displays:**
 ```ini
 scale_factor = 1.15
-font_size_adjustment = 1
+base_font_size = 12
 ```
 
 **For 4K displays:**
 ```ini
 scale_factor = 1.5
-font_size_adjustment = 2
+base_font_size = 12
 ```
 
 **For very large displays (32"+):**
 ```ini
 scale_factor = 1.25
-font_size_adjustment = 3
+base_font_size = 12
 ```
 
 ## Environment Variables

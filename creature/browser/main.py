@@ -64,30 +64,32 @@ logger = logging.getLogger(__name__)
 
 # Utility functions have been moved to separate modules (utilities.py and ssl_handler.py)
 
+
 # Resource loading utilities
 def get_data_path(filename):
     """Get path to a data file using importlib.resources."""
     try:
-        if '/' in filename:
+        if "/" in filename:
             # Handle subdirectories in data/
-            parts = filename.split('/')
+            parts = filename.split("/")
             subdir = parts[0]
-            file = '/'.join(parts[1:])
-            if subdir == 'scripts':
-                return importlib.resources.files('creature').parent / 'data' / 'scripts' / file
-            elif subdir == 'icons':
-                return importlib.resources.files('creature').parent / 'data' / 'icons' / file
-            elif subdir == 'images':
-                return importlib.resources.files('creature').parent / 'data' / 'images' / file
+            file = "/".join(parts[1:])
+            if subdir == "scripts":
+                return importlib.resources.files("creature").parent / "data" / "scripts" / file
+            elif subdir == "icons":
+                return importlib.resources.files("creature").parent / "data" / "icons" / file
+            elif subdir == "images":
+                return importlib.resources.files("creature").parent / "data" / "images" / file
             else:
-                return importlib.resources.files('creature').parent / 'data' / filename
+                return importlib.resources.files("creature").parent / "data" / filename
         else:
             # File in data root
-            return importlib.resources.files('creature').parent / 'data' / filename
+            return importlib.resources.files("creature").parent / "data" / filename
     except Exception as e:
         logger.debug(f"Resource loading failed for {filename}: {e}")
         # Fallback to relative path from current file
-        return Path(__file__).parent.parent.parent / 'data' / filename
+        return Path(__file__).parent.parent.parent / "data" / filename
+
 
 # Classes have been moved to separate modules:
 # - BookmarkManager, FaviconManager, BookmarkToolbar -> bookmarks.py
@@ -138,40 +140,58 @@ class KeePassXCWebEngineView(QWebEngineView):
         logger.debug("Bridge script injected successfully")
 
     def contextMenuEvent(self, event):
-        """Override context menu to add KeePassXC options."""
-        # Create our own context menu since PyQt6 doesn't have createStandardContextMenu
-
-        menu = QMenu(self)
-
+        """Override context menu to add custom options."""
         # Store the global position immediately to ensure accuracy
         global_pos = event.globalPos()
-
-        # Get information about the clicked element
         pos = event.pos()
+        
+        # Get the standard context menu data
+        context_data = self.page().contextMenuData()
+        
+        # Create custom menu
+        menu = QMenu(self)
+        
+        # Get information about the clicked element (including links)
         js_code = f"""
         (function() {{
             var element = document.elementFromPoint({pos.x()}, {pos.y()});
             if (!element) return null;
+            
+            // Check if it's a link or inside a link
+            var linkElement = element.closest('a');
+            var linkUrl = linkElement ? linkElement.href : null;
+            
+            // Get selected text
+            var selectedText = window.getSelection().toString();
+            
+            var result = {{
+                linkUrl: linkUrl,
+                selectedText: selectedText,
+                isEditable: element.isContentEditable || ['input', 'textarea'].includes(element.tagName.toLowerCase())
+            }};
 
             if (['input', 'textarea'].includes(element.tagName.toLowerCase())) {{
-                return {{
-                    isFormField: true,
-                    type: element.type || 'text',
-                    name: element.name || '',
-                    id: element.id || '',
-                    placeholder: element.placeholder || '',
-                    isPassword: element.type === 'password',
-                    isEmail: element.type === 'email' || element.name.toLowerCase().includes('email'),
-                    isUsername: element.name.toLowerCase().includes('user') ||
-                               element.id.toLowerCase().includes('user') ||
-                               element.placeholder.toLowerCase().includes('user')
-                }};
+                result.isFormField = true;
+                result.type = element.type || 'text';
+                result.name = element.name || '';
+                result.id = element.id || '';
+                result.placeholder = element.placeholder || '';
+                result.isPassword = element.type === 'password';
+                result.isEmail = element.type === 'email' || element.name.toLowerCase().includes('email');
+                result.isUsername = element.name.toLowerCase().includes('user') ||
+                                   element.id.toLowerCase().includes('user') ||
+                                   element.placeholder.toLowerCase().includes('user');
             }}
-            return null;
+            return result;
         }})();
         """
 
-        # Add basic browser actions first
+        # Execute JavaScript to get element info, then build menu
+        self.page().runJavaScript(js_code, lambda result: self._build_context_menu(menu, event, result, global_pos, context_data))
+
+    def _build_context_menu(self, menu, event, element_info, global_pos, context_data):
+        """Build context menu with all appropriate options."""
+        # Navigation actions
         back_action = QAction("Back", self)
         back_action.setEnabled(self.page().history().canGoBack())
         back_action.triggered.connect(self.back)
@@ -185,15 +205,58 @@ class KeePassXCWebEngineView(QWebEngineView):
         reload_action = QAction("Reload", self)
         reload_action.triggered.connect(self.reload)
         menu.addAction(reload_action)
-
+        
         menu.addSeparator()
-
-        # Execute JavaScript to get element info, passing stored global position
-        self.page().runJavaScript(js_code, lambda result: self._show_context_menu(menu, event, result, global_pos))
-
-    def _show_context_menu(self, menu, event, element_info, global_pos):
-        """Show context menu with KeePassXC options if applicable."""
-        # Add KeePassXC options only if enabled and configured
+        
+        # Link-specific actions
+        if element_info and element_info.get("linkUrl"):
+            # Copy link action
+            copy_link_action = QAction("Copy Link", self)
+            copy_link_action.triggered.connect(lambda: self._copy_link_to_clipboard(element_info.get("linkUrl")))
+            menu.addAction(copy_link_action)
+            
+            # Open link in new tab (if tabs are enabled)
+            parent_browser = self.parent()
+            while parent_browser and not isinstance(parent_browser, QMainWindow):
+                parent_browser = parent_browser.parent()
+            
+            if parent_browser and hasattr(parent_browser, "add_new_tab") and not parent_browser.force_new_window:
+                open_link_tab_action = QAction("Open Link in New Tab", self)
+                open_link_tab_action.triggered.connect(lambda: parent_browser.add_new_tab(element_info.get("linkUrl")))
+                menu.addAction(open_link_tab_action)
+            
+            # Open link in new window
+            if parent_browser:
+                open_link_window_action = QAction("Open Link in New Window", self)
+                open_link_window_action.triggered.connect(lambda: parent_browser.new_window(element_info.get("linkUrl")))
+                menu.addAction(open_link_window_action)
+            
+            menu.addSeparator()
+        
+        # Copy action (for selected text or general copy)
+        if element_info and element_info.get("selectedText"):
+            copy_action = QAction("Copy", self)
+            copy_action.triggered.connect(lambda: self.page().triggerAction(QWebEnginePage.WebAction.Copy))
+            menu.addAction(copy_action)
+        
+        # Paste action (for editable fields)
+        if element_info and element_info.get("isEditable"):
+            paste_action = QAction("Paste", self)
+            paste_action.triggered.connect(lambda: self.page().triggerAction(QWebEnginePage.WebAction.Paste))
+            menu.addAction(paste_action)
+            
+            # Cut action for editable fields with selected text
+            if element_info.get("selectedText"):
+                cut_action = QAction("Cut", self)
+                cut_action.triggered.connect(lambda: self.page().triggerAction(QWebEnginePage.WebAction.Cut))
+                menu.addAction(cut_action)
+        
+        # Select All action
+        select_all_action = QAction("Select All", self)
+        select_all_action.triggered.connect(lambda: self.page().triggerAction(QWebEnginePage.WebAction.SelectAll))
+        menu.addAction(select_all_action)
+        
+        # Add KeePassXC options if applicable
         if keepass_manager.enabled and keepass_manager.config.show_context_menu:
             if element_info and element_info.get("isFormField"):
                 menu.addSeparator()
@@ -225,6 +288,12 @@ class KeePassXCWebEngineView(QWebEngineView):
 
         # Show the menu at the stored global position
         menu.popup(global_pos)
+    
+    def _copy_link_to_clipboard(self, url):
+        """Copy a URL to the clipboard."""
+        from PyQt6.QtWidgets import QApplication
+        clipboard = QApplication.clipboard()
+        clipboard.setText(url)
 
     def _get_master_password(self):
         """Get master password from user if not cached."""
@@ -1182,10 +1251,6 @@ class BrowserTab(QWidget):
         home_shortcut = QShortcut(QKeySequence("Alt+Home"), self)
         home_shortcut.activated.connect(self.navigate_home)
 
-        # Ctrl+X to exit browser
-        exit_shortcut = QShortcut(QKeySequence("Ctrl+X"), self)
-        exit_shortcut.activated.connect(self.exit_browser)
-
         # F5 to reload page
         reload_shortcut = QShortcut(QKeySequence("F5"), self)
         reload_shortcut.activated.connect(self.web_view.reload)
@@ -1307,10 +1372,12 @@ class BrowserTab(QWidget):
         url_input.returnPressed.connect(navigate_to_url)  # Enter key support
 
         # Connect navigation signal for HistoryURLLineEdit
-        if hasattr(url_input, 'navigationRequested'):
+        if hasattr(url_input, "navigationRequested"):
+
             def handle_autocomplete_navigation(url):
                 self.navigate_to(url)
                 dialog.accept()
+
             url_input.navigationRequested.connect(handle_autocomplete_navigation)
 
         # Show dialog and focus on input
@@ -1348,7 +1415,7 @@ class BrowserTab(QWidget):
             title = self.web_view.title()
 
             # Skip internal URLs and invalid URLs
-            if not url or url.startswith('about:') or url.startswith('data:'):
+            if not url or url.startswith("about:") or url.startswith("data:"):
                 return
 
             # Record the visit in history
@@ -1477,14 +1544,14 @@ class CreatureBrowser(QMainWindow):
         self.history_manager = HistoryManager(self.profile_name, self.profile_manager.base_dir)
 
         # Configure history manager with settings
-        if hasattr(creature_config, 'history'):
+        if hasattr(creature_config, "history"):
             history_config = {
-                'enabled': creature_config.history.enabled,
-                'retention_days': creature_config.history.retention_days,
-                'max_entries': creature_config.history.max_entries,
-                'autocomplete_max_results': creature_config.history.autocomplete_max_results,
-                'cleanup_interval_minutes': creature_config.history.cleanup_interval_minutes,
-                'ordering': creature_config.history.ordering
+                "enabled": creature_config.history.enabled,
+                "retention_days": creature_config.history.retention_days,
+                "max_entries": creature_config.history.max_entries,
+                "autocomplete_max_results": creature_config.history.autocomplete_max_results,
+                "cleanup_interval_minutes": creature_config.history.cleanup_interval_minutes,
+                "ordering": creature_config.history.ordering,
             }
             self.history_manager.update_config(history_config)
 
@@ -1638,7 +1705,78 @@ class CreatureBrowser(QMainWindow):
 
         # Hide the traditional menu bar to save vertical space
         self.menuBar().setVisible(False)
+        
+        # Create global actions that work across all widgets
+        self._create_global_actions()
 
+    def _create_global_actions(self):
+        """Create global actions that work across all widgets in the application."""
+        # Quit action - global application-wide
+        self.quit_action = QAction("Quit", self)
+        self.quit_action.setShortcut("Ctrl+Q")
+        self.quit_action.setShortcutContext(Qt.ShortcutContext.ApplicationShortcut)
+        self.quit_action.triggered.connect(self.quit_application)
+        self.addAction(self.quit_action)
+        
+        # Close tab action - only if tabs are supported
+        if not self.force_new_window and not self.minimal_mode:
+            self.close_tab_action = QAction("Close Tab", self)
+            self.close_tab_action.setShortcut("Ctrl+W")
+            self.close_tab_action.setShortcutContext(Qt.ShortcutContext.ApplicationShortcut)
+            self.close_tab_action.triggered.connect(lambda: self.close_tab(self.tabs.currentIndex()) if hasattr(self, "tabs") else None)
+            self.addAction(self.close_tab_action)
+            
+            # New tab action
+            self.new_tab_action = QAction("New Tab", self)
+            self.new_tab_action.setShortcut("Ctrl+T")
+            self.new_tab_action.setShortcutContext(Qt.ShortcutContext.ApplicationShortcut)
+            self.new_tab_action.triggered.connect(self.add_new_tab)
+            self.addAction(self.new_tab_action)
+        
+        # New window action
+        self.new_window_action = QAction("New Window", self)
+        self.new_window_action.setShortcut("Ctrl+N")
+        self.new_window_action.setShortcutContext(Qt.ShortcutContext.ApplicationShortcut)
+        self.new_window_action.triggered.connect(self.new_window)
+        self.addAction(self.new_window_action)
+        
+        # History action
+        self.history_action = QAction("Browsing History...", self)
+        self.history_action.setShortcut("Ctrl+H")
+        self.history_action.setShortcutContext(Qt.ShortcutContext.ApplicationShortcut)
+        self.history_action.triggered.connect(self.open_history_editor)
+        self.addAction(self.history_action)
+        
+        # Session actions (only in normal mode)
+        if not self.force_new_window:
+            # Save session
+            self.save_session_action = QAction("Save Current Session...", self)
+            self.save_session_action.setShortcut("Ctrl+Shift+S")
+            self.save_session_action.setShortcutContext(Qt.ShortcutContext.ApplicationShortcut)
+            self.save_session_action.triggered.connect(self.save_current_session_dialog)
+            self.addAction(self.save_session_action)
+            
+            # Manage sessions
+            self.manage_sessions_action = QAction("Manage Sessions...", self)
+            self.manage_sessions_action.setShortcut("Ctrl+Shift+O")
+            self.manage_sessions_action.setShortcutContext(Qt.ShortcutContext.ApplicationShortcut)
+            self.manage_sessions_action.triggered.connect(self.show_session_manager_dialog)
+            self.addAction(self.manage_sessions_action)
+            
+            # Load last session
+            self.load_last_session_action = QAction("Load Last Session", self)
+            self.load_last_session_action.setShortcut("Ctrl+Shift+L")
+            self.load_last_session_action.setShortcutContext(Qt.ShortcutContext.ApplicationShortcut)
+            self.load_last_session_action.triggered.connect(lambda: self.load_session_by_name("last") if self.browser_session_manager.has_last_session() else None)
+            self.addAction(self.load_last_session_action)
+        
+        # Help action
+        self.help_action = QAction("Help...", self)
+        self.help_action.setShortcut("F1")
+        self.help_action.setShortcutContext(Qt.ShortcutContext.ApplicationShortcut)
+        self.help_action.triggered.connect(self.show_help)
+        self.addAction(self.help_action)
+    
     def show_hamburger_menu(self):
         """Show the hamburger menu with all menu options."""
 
@@ -1646,26 +1784,17 @@ class CreatureBrowser(QMainWindow):
 
         # File section
         if not self.force_new_window:
-            new_tab_action = QAction("New Tab", self)
-            new_tab_action.setShortcut("Ctrl+T")
-            new_tab_action.triggered.connect(self.add_new_tab)
-            menu.addAction(new_tab_action)
+            menu.addAction(self.new_tab_action)
             menu.addSeparator()
 
-        new_window_action = QAction("New Window", self)
-        new_window_action.setShortcut("Ctrl+N")
-        new_window_action.triggered.connect(self.new_window)
-        menu.addAction(new_window_action)
+        menu.addAction(self.new_window_action)
 
         # Sessions section - only in normal mode (not minimal mode)
         if not self.force_new_window:
             sessions_submenu = menu.addMenu("Sessions")
 
             # Save current session
-            save_session_action = QAction("Save Current Session...", self)
-            save_session_action.setShortcut("Ctrl+Shift+S")
-            save_session_action.triggered.connect(self.save_current_session_dialog)
-            sessions_submenu.addAction(save_session_action)
+            sessions_submenu.addAction(self.save_session_action)
 
             sessions_submenu.addSeparator()
 
@@ -1681,17 +1810,12 @@ class CreatureBrowser(QMainWindow):
                 sessions_submenu.addSeparator()
 
             # Manage sessions
-            manage_sessions_action = QAction("Manage Sessions...", self)
-            manage_sessions_action.triggered.connect(self.show_session_manager_dialog)
-            sessions_submenu.addAction(manage_sessions_action)
+            sessions_submenu.addAction(self.manage_sessions_action)
 
         menu.addSeparator()
 
         # History section
-        history_action = QAction("Browsing History...", self)
-        history_action.setShortcut("Ctrl+H")
-        history_action.triggered.connect(self.open_history_editor)
-        menu.addAction(history_action)
+        menu.addAction(self.history_action)
 
         menu.addSeparator()
 
@@ -1714,10 +1838,7 @@ class CreatureBrowser(QMainWindow):
         menu.addSeparator()
 
         # Help section
-        help_action = QAction("Help...", self)
-        help_action.setShortcut("F1")
-        help_action.triggered.connect(self.show_help)
-        menu.addAction(help_action)
+        menu.addAction(self.help_action)
 
         about_action = QAction("About Creature Browser", self)
         about_action.triggered.connect(self.show_about)
@@ -1726,10 +1847,7 @@ class CreatureBrowser(QMainWindow):
         menu.addSeparator()
 
         # Quit action at bottom
-        quit_action = QAction("Quit", self)
-        quit_action.setShortcut("Ctrl+Q")
-        quit_action.triggered.connect(self.quit_application)
-        menu.addAction(quit_action)
+        menu.addAction(self.quit_action)
 
         # Show menu below the hamburger button
         button_pos = self.hamburger_button.mapToGlobal(self.hamburger_button.rect().bottomLeft())
@@ -1865,13 +1983,13 @@ class CreatureBrowser(QMainWindow):
         about_dialog.exec()
 
     def setup_tab_shortcuts(self):
-        """Set up keyboard shortcuts for tab cycling and window management."""
+        """Set up keyboard shortcuts for tab cycling.
+        
+        Note: Most shortcuts are now defined as global QActions in _create_global_actions().
+        This function only sets up tab navigation shortcuts that aren't global actions.
+        """
         if not hasattr(self, "tabs"):
             return
-
-        # Ctrl+T - New tab
-        new_tab_shortcut = QShortcut(QKeySequence("Ctrl+T"), self)
-        new_tab_shortcut.activated.connect(self.add_new_tab)
 
         # Ctrl+Shift+Right - Next tab
         next_tab_shortcut = QShortcut(QKeySequence("Ctrl+Shift+Right"), self)
@@ -1880,27 +1998,6 @@ class CreatureBrowser(QMainWindow):
         # Ctrl+Shift+Left - Previous tab
         prev_tab_shortcut = QShortcut(QKeySequence("Ctrl+Shift+Left"), self)
         prev_tab_shortcut.activated.connect(self.previous_tab)
-
-        # Ctrl+N - New window
-        new_window_shortcut = QShortcut(QKeySequence("Ctrl+N"), self)
-        new_window_shortcut.activated.connect(self.new_window)
-
-        # Session shortcuts
-        # Ctrl+Shift+S - Save current session (already defined in menu)
-        save_session_shortcut = QShortcut(QKeySequence("Ctrl+Shift+S"), self)
-        save_session_shortcut.activated.connect(self.save_current_session_dialog)
-
-        # Ctrl+Shift+O - Open session manager
-        manage_sessions_shortcut = QShortcut(QKeySequence("Ctrl+Shift+O"), self)
-        manage_sessions_shortcut.activated.connect(self.show_session_manager_dialog)
-
-        # Ctrl+Shift+L - Load last session (if it exists)
-        load_last_shortcut = QShortcut(QKeySequence("Ctrl+Shift+L"), self)
-        load_last_shortcut.activated.connect(lambda: self.load_session_by_name("last") if self.browser_session_manager.has_last_session() else None)
-
-        # Ctrl+H - Open history editor
-        history_shortcut = QShortcut(QKeySequence("Ctrl+H"), self)
-        history_shortcut.activated.connect(self.open_history_editor)
 
     def next_tab(self):
         """Switch to the next tab."""
@@ -1931,7 +2028,7 @@ class CreatureBrowser(QMainWindow):
 
         try:
             # Shutdown history manager
-            if hasattr(self, 'history_manager'):
+            if hasattr(self, "history_manager"):
                 self.history_manager.shutdown()
                 logger.debug("History manager shutdown completed")
         except Exception as e:
@@ -1992,7 +2089,7 @@ class CreatureBrowser(QMainWindow):
         history_editor.navigationRequested.connect(self.add_new_tab)
 
         # Add as tab
-        if hasattr(self, 'tabs'):
+        if hasattr(self, "tabs"):
             index = self.tabs.addTab(history_editor, "History")
             self.tabs.setCurrentIndex(index)
 
@@ -2017,7 +2114,7 @@ class CreatureBrowser(QMainWindow):
         # Connect navigation to close dialog and open URL
         def handle_navigation(url):
             dialog.accept()
-            if hasattr(self, 'single_tab'):
+            if hasattr(self, "single_tab"):
                 self.single_tab.navigate_to(url)
             else:
                 self.add_new_tab(url)

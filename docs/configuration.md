@@ -74,9 +74,9 @@ You can add your own search engines by adding new entries to the `[search]` sect
 # 1.25 = 25% larger, 1.5 = 50% larger, 2.0 = 200% (double size)
 scale_factor = 1.0
 
-# Font size adjustment in points
-# 0 = normal, +3 = 3 points larger, -2 = 2 points smaller
-font_size_adjustment = 0
+# Base font size in points
+# 0 = use system default (usually 9-12 points), or specify exact size
+base_font_size = 0
 
 # Force specific DPI value (0 = auto-detect)
 # Common values: 96 (standard), 144 (1.5x), 192 (2x)

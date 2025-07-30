@@ -5,9 +5,9 @@ Provides interface for viewing, searching, and managing browsing history.
 
 import logging
 from datetime import datetime
-from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLineEdit, QListWidget, QListWidgetItem, QLabel, QMessageBox, QMenu, QAbstractItemView, QSplitter, QTextEdit, QFrame
+from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLineEdit, QListWidget, QListWidgetItem, QLabel, QMessageBox, QMenu, QAbstractItemView, QSplitter, QTextEdit, QApplication
 from PyQt6.QtCore import Qt, pyqtSignal, QTimer, QThread, pyqtSlot
-from PyQt6.QtGui import QFont, QAction
+from PyQt6.QtGui import QFont, QAction, QKeySequence, QShortcut
 
 logger = logging.getLogger(__name__)
 
@@ -91,91 +91,65 @@ class HistoryEditorWidget(QWidget):
         self._search_timer.timeout.connect(self._perform_search)
 
         self._setup_ui()
+        self._setup_shortcuts()
         self._apply_theme_styling()
         self._load_initial_data()
 
         logger.debug("HistoryEditorWidget initialized")
+    
+    def _get_base_font_size(self):
+        """Get the base font size from global settings."""
+        base_font = QApplication.instance().font()
+        return base_font.pointSize()
 
     def _setup_ui(self):
         """Set up the user interface."""
         layout = QVBoxLayout(self)
-        layout.setSpacing(10)
-        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(5)
+        layout.setContentsMargins(10, 10, 10, 10)
 
-        # Title
-        title_label = QLabel("Browsing History")
-        title_font = QFont()
-        title_font.setPointSize(18)
+        # Header - single row with everything
+        header_widget = QWidget()
+        header_layout = QHBoxLayout(header_widget)
+        header_layout.setContentsMargins(8, 8, 8, 8)
+        header_layout.setSpacing(12)
+
+        # Title (very compact)
+        title_label = QLabel("History")
+        title_font = QApplication.instance().font()
         title_font.setBold(True)
         title_label.setFont(title_font)
-        layout.addWidget(title_label)
+        header_layout.addWidget(title_label)
 
-        # Controls section
-        controls_layout = QHBoxLayout()
-
-        # Clear all button
-        self.clear_all_btn = QPushButton("Clear All History")
-        self.clear_all_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #dc3545;
-                color: white;
-                padding: 8px 16px;
-                border: none;
-                border-radius: 4px;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background-color: #c82333;
-            }
-        """)
-        self.clear_all_btn.clicked.connect(self._clear_all_history)
-        controls_layout.addWidget(self.clear_all_btn)
-
-        # Spacer
-        controls_layout.addStretch()
-
-        # Statistics
-        self.stats_label = QLabel("Loading...")
-        controls_layout.addWidget(self.stats_label)
-
-        layout.addLayout(controls_layout)
-
-        # Search field
-        search_layout = QHBoxLayout()
-        search_label = QLabel("Search:")
-        search_layout.addWidget(search_label)
-
+        # Search field (in header to save space)
         self.search_field = QLineEdit()
-        self.search_field.setPlaceholderText("Search history by URL or title...")
+        self.search_field.setPlaceholderText("Search history...")
         self.search_field.textChanged.connect(self._on_search_text_changed)
-        search_layout.addWidget(self.search_field)
+        header_layout.addWidget(self.search_field)
 
         self.clear_search_btn = QPushButton("Clear")
         self.clear_search_btn.clicked.connect(self._clear_search)
-        search_layout.addWidget(self.clear_search_btn)
+        header_layout.addWidget(self.clear_search_btn)
 
-        layout.addLayout(search_layout)
+        # Clear all button (compact)
+        self.clear_all_btn = QPushButton("Clear All")
+        self.clear_all_btn.clicked.connect(self._clear_all_history)
+        header_layout.addWidget(self.clear_all_btn)
 
-        # Main content area with splitter
-        splitter = QSplitter(Qt.Orientation.Horizontal)
+        # Statistics (compact)
+        self.stats_label = QLabel("Loading...")
+        self.stats_label.setStyleSheet("color: gray;")
+        header_layout.addWidget(self.stats_label)
 
-        # History list
-        list_frame = QFrame()
-        list_layout = QVBoxLayout(list_frame)
-        list_layout.setContentsMargins(0, 0, 0, 0)
+        # Add header with NO stretch factor (minimal space)
+        layout.addWidget(header_widget, 0)
 
-        list_label = QLabel("History Entries:")
-        list_layout.addWidget(list_label)
+        # Add list controls above splitter so they're always visible
+        controls_widget = QWidget()
+        list_controls = QHBoxLayout(controls_widget)
+        list_controls.setContentsMargins(8, 5, 8, 5)
+        list_controls.setSpacing(8)
 
-        self.history_list = QListWidget()
-        self.history_list.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
-        self.history_list.itemDoubleClicked.connect(self._on_item_double_clicked)
-        self.history_list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
-        self.history_list.customContextMenuRequested.connect(self._show_context_menu)
-        list_layout.addWidget(self.history_list)
-
-        # List controls
-        list_controls = QHBoxLayout()
         self.delete_selected_btn = QPushButton("Delete Selected")
         self.delete_selected_btn.clicked.connect(self._delete_selected_entries)
         list_controls.addWidget(self.delete_selected_btn)
@@ -185,30 +159,79 @@ class HistoryEditorWidget(QWidget):
         list_controls.addWidget(self.refresh_btn)
 
         list_controls.addStretch()
-        list_layout.addLayout(list_controls)
+        layout.addWidget(controls_widget, 0)  # No stretch - minimal space
 
-        splitter.addWidget(list_frame)
+        # Main content area with splitter - this gets ALL remaining space
+        splitter = QSplitter(Qt.Orientation.Horizontal)
 
-        # Details panel
-        details_frame = QFrame()
-        details_layout = QVBoxLayout(details_frame)
-        details_layout.setContentsMargins(10, 0, 0, 0)
+        # History list (simplified - just the list widget)
+        self.history_list = QListWidget()
+        self.history_list.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
+        self.history_list.itemDoubleClicked.connect(self._on_item_double_clicked)
+        self.history_list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.history_list.customContextMenuRequested.connect(self._show_context_menu)
+        splitter.addWidget(self.history_list)
 
-        details_label = QLabel("Entry Details:")
+        # Compact details panel
+        details_widget = QWidget()
+        details_layout = QVBoxLayout(details_widget)
+        details_layout.setContentsMargins(5, 5, 0, 0)
+        details_layout.setSpacing(3)
+
+        # Small details label
+        details_label = QLabel("Details")
+        details_label.setStyleSheet("font-weight: bold;")
         details_layout.addWidget(details_label)
 
         self.details_text = QTextEdit()
         self.details_text.setReadOnly(True)
-        self.details_text.setMaximumWidth(300)
+        self.details_text.setMinimumWidth(200)  # Minimum width, but can expand
         details_layout.addWidget(self.details_text)
 
-        splitter.addWidget(details_frame)
-        splitter.setSizes([700, 300])  # 70% list, 30% details
+        splitter.addWidget(details_widget)
 
-        layout.addWidget(splitter)
+        # Set stretch factors: history list gets more priority but details can expand
+        splitter.setStretchFactor(0, 3)  # History list gets 3 parts
+        splitter.setStretchFactor(1, 1)  # Details gets 1 part
+
+        # Set reasonable initial sizes - will adapt to window width
+        # These are just initial hints, the stretch factors control resizing
+        splitter.setSizes([600, 200])
+
+        # Add splitter with HIGH stretch factor - this takes ALL remaining space
+        layout.addWidget(splitter, 1)
 
         # Connect selection change to update details
         self.history_list.itemSelectionChanged.connect(self._update_details)
+
+    def _setup_shortcuts(self):
+        """Set up keyboard shortcuts for the history editor."""
+        # Ctrl+F - Focus search field
+        search_shortcut = QShortcut(QKeySequence("Ctrl+F"), self)
+        search_shortcut.activated.connect(lambda: self.search_field.setFocus())
+
+        # Ctrl+A - Select all items in history list
+        select_all_shortcut = QShortcut(QKeySequence("Ctrl+A"), self)
+        select_all_shortcut.activated.connect(self.history_list.selectAll)
+
+        # Delete key - Delete selected entries
+        delete_shortcut = QShortcut(QKeySequence("Delete"), self)
+        delete_shortcut.activated.connect(self._delete_selected_entries)
+
+        # Ctrl+R or F5 - Refresh
+        refresh_shortcut = QShortcut(QKeySequence("Ctrl+R"), self)
+        refresh_shortcut.activated.connect(self._refresh_data)
+
+        f5_shortcut = QShortcut(QKeySequence("F5"), self)
+        f5_shortcut.activated.connect(self._refresh_data)
+
+        # Ctrl+C - Copy selected entries URLs to clipboard
+        copy_shortcut = QShortcut(QKeySequence("Ctrl+C"), self)
+        copy_shortcut.activated.connect(self._copy_selected_entries)
+
+        # Escape - Clear search
+        escape_shortcut = QShortcut(QKeySequence("Escape"), self)
+        escape_shortcut.activated.connect(self._clear_search)
 
     def _apply_theme_styling(self):
         """Apply theme-aware styling."""
@@ -225,39 +248,72 @@ class HistoryEditorWidget(QWidget):
             else:
                 colors = {}
 
-            # Apply styling to search field and list
+            # Get proper theme colors with better contrast
+            text_color = colors.get("text_color", "#000000")
+            border_color = colors.get("border_color", "#ccc")
+            accent_color = colors.get("accent", "#0078d4")
+
+            # Use theme colors properly - try multiple fallbacks
+            list_text_color = colors.get("text_color", "#000000")
+            list_bg = colors.get("window_bg", colors.get("background", "#ffffff"))
+            list_alt_bg = colors.get("url_bar_bg", colors.get("tab_bg", colors.get("card_bg", "#f8f9fa")))
+
+            # Ensure we have proper input background
+            input_bg = colors.get("url_bar_bg", colors.get("input_bg", list_bg))
+
+            # Apply styling with improved contrast
             widget_style = f"""
                 QLineEdit {{
                     padding: 6px 10px;
-                    border: 1px solid {colors.get("border_color", "#ccc")};
+                    border: 1px solid {border_color};
                     border-radius: 4px;
-                    background-color: {colors.get("input_bg", "#ffffff")};
-                    color: {colors.get("text_color", "#000000")};
+                    background-color: {input_bg};
+                    color: {text_color};
                 }}
                 QListWidget {{
-                    border: 1px solid {colors.get("border_color", "#ccc")};
-                    background-color: {colors.get("list_bg", "#ffffff")};
-                    color: {colors.get("text_color", "#000000")};
-                    alternate-background-color: {colors.get("list_alt_bg", "#f8f9fa")};
+                    border: 1px solid {border_color};
+                    background-color: {list_bg};
+                    color: {list_text_color};
+                    alternate-background-color: {list_alt_bg};
                 }}
                 QListWidget::item {{
                     padding: 8px;
-                    border-bottom: 1px solid {colors.get("border_color", "#eee")};
+                    border-bottom: 1px solid {border_color};
+                    color: {list_text_color};
                 }}
                 QListWidget::item:selected {{
-                    background-color: {colors.get("accent", "#0078d4")};
+                    background-color: {accent_color};
                     color: white;
                 }}
-                QTextEdit {{
-                    border: 1px solid {colors.get("border_color", "#ccc")};
-                    background-color: {colors.get("input_bg", "#ffffff")};
-                    color: {colors.get("text_color", "#000000")};
+                QListWidget::item:hover {{
+                    background-color: {list_alt_bg};
                 }}
+                QTextEdit {{
+                    border: 1px solid {border_color};
+                    background-color: {input_bg};
+                    color: {text_color};
+                }}
+            """
+
+            # Apply button styling to match theme
+            button_style = """
+                QPushButton {
+                    background-color: #dc3545;
+                    color: white;
+                    padding: 6px 12px;
+                    border: none;
+                    border-radius: 4px;
+                    font-weight: bold;
+                }
+                QPushButton:hover {
+                    background-color: #c82333;
+                }
             """
 
             self.search_field.setStyleSheet(widget_style)
             self.history_list.setStyleSheet(widget_style)
             self.details_text.setStyleSheet(widget_style)
+            self.clear_all_btn.setStyleSheet(button_style)
 
         except Exception as e:
             logger.debug(f"Failed to apply theme styling: {e}")
@@ -356,20 +412,63 @@ class HistoryEditorWidget(QWidget):
                 else:
                     last_date = "Unknown"
 
+                # Get theme colors for HTML styling
+                parent_browser = self.parent()
+                while parent_browser and not hasattr(parent_browser, "theme_manager"):
+                    parent_browser = parent_browser.parent()
+
+                if parent_browser and hasattr(parent_browser, "theme_manager"):
+                    current_theme = getattr(parent_browser, "current_theme", "light")
+                    theme = parent_browser.theme_manager.themes.get(current_theme, {})
+                    colors = theme.get("colors", {}) if theme else {}
+                else:
+                    colors = {}
+
+                text_color = colors.get("text_color", "#000000")
+                accent_color = colors.get("accent", "#0078d4")
+                base_font_size = self._get_base_font_size()
+
                 details_html = f"""
-                <h3>Entry Details</h3>
-                <p><strong>Title:</strong><br/>{title}</p>
-                <p><strong>URL:</strong><br/><a href="{url}">{url}</a></p>
-                <p><strong>Host:</strong> {host}</p>
-                <p><strong>Visit Count:</strong> {visit_count}</p>
-                <p><strong>Last Visited:</strong><br/>{last_date}</p>
+                <div style="color: {text_color}; font-family: system-ui, -apple-system, sans-serif; font-size: {base_font_size}px;">
+                    <h3 style="color: {text_color}; margin-top: 0;">Entry Details</h3>
+                    <p style="margin: 8px 0;"><strong>Title:</strong><br/>
+                       <span>{title}</span></p>
+                    <p style="margin: 8px 0;"><strong>URL:</strong><br/>
+                       <a href="{url}" style="color: {accent_color}; word-break: break-all;">{url}</a></p>
+                    <p style="margin: 8px 0;"><strong>Host:</strong>
+                       <span>{host}</span></p>
+                    <p style="margin: 8px 0;"><strong>Visit Count:</strong>
+                       <span>{visit_count}</span></p>
+                    <p style="margin: 8px 0;"><strong>Last Visited:</strong><br/>
+                       <span>{last_date}</span></p>
+                </div>
                 """
 
                 self.details_text.setHtml(details_html)
             else:
-                # Multiple items selected
+                # Multiple items selected - theme-aware HTML
+                parent_browser = self.parent()
+                while parent_browser and not hasattr(parent_browser, "theme_manager"):
+                    parent_browser = parent_browser.parent()
+
+                if parent_browser and hasattr(parent_browser, "theme_manager"):
+                    current_theme = getattr(parent_browser, "current_theme", "light")
+                    theme = parent_browser.theme_manager.themes.get(current_theme, {})
+                    colors = theme.get("colors", {}) if theme else {}
+                else:
+                    colors = {}
+
+                text_color = colors.get("text_color", "#000000")
+                base_font_size = self._get_base_font_size()
+
                 count = len(selected_items)
-                self.details_text.setHtml(f"<h3>Multiple Selection</h3><p>{count} entries selected</p>")
+                multi_html = f"""
+                <div style="color: {text_color}; font-family: system-ui, -apple-system, sans-serif; font-size: {base_font_size}px;">
+                    <h3 style="color: {text_color}; margin-top: 0;">Multiple Selection</h3>
+                    <p>{count} entries selected</p>
+                </div>
+                """
+                self.details_text.setHtml(multi_html)
 
         except Exception as e:
             logger.error(f"Error updating details: {e}")
@@ -511,6 +610,30 @@ class HistoryEditorWidget(QWidget):
         """Refresh the history data."""
         self._perform_search()
         self._update_statistics()
+
+    def _copy_selected_entries(self):
+        """Copy selected entries URLs to clipboard."""
+        try:
+            selected_items = self.history_list.selectedItems()
+            if not selected_items:
+                return
+
+            urls = []
+            for item in selected_items:
+                entry = item.data(Qt.ItemDataRole.UserRole)
+                url = entry.get("url", "")
+                if url:
+                    urls.append(url)
+
+            if urls:
+                from PyQt6.QtWidgets import QApplication
+
+                clipboard = QApplication.clipboard()
+                clipboard.setText("\n".join(urls))
+                logger.info(f"Copied {len(urls)} URLs to clipboard")
+
+        except Exception as e:
+            logger.error(f"Error copying entries: {e}")
 
     def refresh_theme(self):
         """Refresh theme styling (called when theme changes)."""

@@ -7,9 +7,8 @@ import logging
 from pathlib import Path
 import importlib.resources
 
-from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFont, QPalette, QColor
-from PyQt6.QtWidgets import QStyleFactory, QApplication
+from PyQt6.QtWidgets import QStyleFactory
 
 from configobj import ConfigObj
 from validate import Validator
@@ -29,35 +28,35 @@ class ThemeManager:
             self.themes_dir = Path(__file__).parent.parent.parent / 'data' / 'config' / 'themes'
         self.theme_spec = self.themes_dir / "theme.spec"
         self.themes = {}
-        
+
         # Store the original system font size to prevent cumulative scaling
         system_font = QFont()
         self.original_font_size = system_font.pointSize()
         if self.original_font_size <= 0:
             self.original_font_size = 12  # Fallback
-        
+
         self.load_themes()
-    
+
     def load_themes(self):
         """Load all theme files from the themes directory."""
         if not self.themes_dir.exists():
             return
-        
+
         for theme_file in self.themes_dir.glob("*.ini"):
             if theme_file.name == "theme.spec":
                 continue
-            
+
             try:
                 # Load theme with validation
                 theme_config = ConfigObj(str(theme_file), configspec=str(self.theme_spec))
                 validator = Validator()
                 theme_config.validate(validator, copy=True)
-                
+
                 theme_name = theme_file.stem
                 self.themes[theme_name] = theme_config
             except Exception as e:
                 logger.error(f"Failed to load theme {theme_file}: {e}")
-    
+
     def get_theme_names(self):
         """Get list of available theme names."""
         return list(self.themes.keys())
@@ -92,15 +91,15 @@ class ThemeManager:
         palette.setColor(QPalette.ColorRole.HighlightedText, QColor("#000000"))
 
         app.setPalette(palette)
-    
+
     def get_border_radius_stylesheet(self, theme):
         """Generate border radius stylesheet for UI elements."""
         if 'ui_elements' not in theme:
             return ""
-        
+
         ui_elements = theme['ui_elements']
         colors = theme['colors']
-        
+
         # Build comprehensive stylesheet with border radius
         return f"""
             /* Button styling with border radius */
@@ -145,7 +144,7 @@ class ThemeManager:
             
             QTabBar::tab {{
                 border-radius: {ui_elements.get('tab_radius', 6)}px;
-                padding: 8px 16px;
+                padding: 4px 8px;
                 margin: 2px;
                 background-color: {colors.get('tab_bg', '#f5f5f5')};
                 color: {colors.get('text_color', '#000')};
@@ -220,42 +219,52 @@ class ThemeManager:
                 color: white;
             }}
         """
-    
+
     def get_theme_color(self, theme_name, color_key):
         """Get a specific color from a theme."""
         if theme_name in self.themes:
             return self.themes[theme_name]['colors'].get(color_key, "")
         return ""
-    
+
     def apply_ui_scaling(self, app, theme=None):
         """Apply UI scaling, font selection, and font size adjustments."""
         ui_config = creature_config.ui
-        
+
         # Apply font family, weight, and style
         font = self.get_configured_font(app)
+
+        # Use configured base font size, or fall back to system default
+        if ui_config.base_font_size > 0:
+            final_font_size = ui_config.base_font_size
+        else:
+            # Use system default font size
+            final_font_size = self.original_font_size
         
-        # Always use the original system font size as the base to prevent cumulative scaling
-        base_font_size = self.original_font_size
-        
-        # Apply font size adjustment to the original base size
-        final_font_size = base_font_size + ui_config.font_size_adjustment
         font.setPointSize(max(8, final_font_size))
-        
+
         app.setFont(font)
-        
+
         # Clear any existing stylesheet first to prevent accumulation
         app.setStyleSheet("")
-        
+
         # Build base stylesheet with scaling
         base_stylesheet = ""
+
+        # Apply scaling if scale_factor is not 1.0
         if ui_config.scale_factor != 1.0:
             scale_factor = ui_config.scale_factor
             # Calculate scaled font size from the final font size (not hardcoded 12)
             scaled_font_size = int(final_font_size * scale_factor)
-            
+
             base_stylesheet = f"""
                 QWidget {{
                     font-size: {scaled_font_size}px;
+                }}
+                QTabBar::tab {{
+                    font-size: {scaled_font_size}px;
+                    min-height: {int(26 * scale_factor)}px;
+                    min-width: {int(60 * scale_factor)}px;
+                    padding: {int(2 * scale_factor)}px {int(6 * scale_factor)}px;
                 }}
                 QLineEdit {{
                     min-height: {int(24 * scale_factor)}px;
@@ -272,17 +281,12 @@ class ThemeManager:
                 QTabWidget::tab-bar {{
                     alignment: left;
                 }}
-                QTabBar::tab {{
-                    min-height: {int(30 * scale_factor)}px;
-                    min-width: {int(80 * scale_factor)}px;
-                    padding: {int(4 * scale_factor)}px {int(8 * scale_factor)}px;
-                }}
                 QToolBar {{
                     spacing: {int(4 * scale_factor)}px;
                     padding: {int(2 * scale_factor)}px;
                 }}
             """
-        
+
         # Combine with border radius styling if theme is provided
         if theme and 'ui_elements' in theme:
             border_radius_stylesheet = self.get_border_radius_stylesheet(theme)
@@ -290,14 +294,14 @@ class ThemeManager:
             app.setStyleSheet(combined_stylesheet)
         else:
             app.setStyleSheet(base_stylesheet)
-    
+
     def get_configured_font(self, app):
         """Get font based on configuration settings."""
         ui_config = creature_config.ui
-        
+
         # Start with a clean system default font (not the current app font)
         font = QFont()
-        
+
         # Set font family
         font_family = ui_config.font_family.lower()
         if font_family == 'system':
@@ -315,7 +319,7 @@ class ThemeManager:
         else:
             # Specific font name
             font.setFamily(ui_config.font_family)
-        
+
         # Set font weight
         font_weight = ui_config.font_weight.lower()
         if font_weight == 'normal':
@@ -350,12 +354,12 @@ class ThemeManager:
             except ValueError:
                 # Default to normal if can't parse
                 font.setWeight(QFont.Weight.Normal)
-        
+
         # Set font style
         font_style = ui_config.font_style.lower()
         if font_style == 'italic':
             font.setItalic(True)
         elif font_style == 'oblique':
             font.setStyle(QFont.Style.StyleOblique)
-        
+
         return font

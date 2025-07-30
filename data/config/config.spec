@@ -122,8 +122,8 @@ disable_hardware_acceleration = boolean(default=False)
 # UI scaling factor (1.0 = normal, 1.25 = 25% larger, etc.)
 scale_factor = float(min=0.5, max=3.0, default=1.0)
 
-# Font size adjustment (0 = normal, positive = larger, negative = smaller)
-font_size_adjustment = integer(min=-10, max=20, default=0)
+# Base font size in points (0 = use system default, typically 9-12 points)
+base_font_size = integer(min=0, max=48, default=0)
 
 # Force Qt to use specific DPI value (0 = auto-detect)
 force_dpi = integer(min=0, max=500, default=0)
