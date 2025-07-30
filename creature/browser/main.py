@@ -13,8 +13,6 @@ from PyQt6.QtWidgets import (
     QPushButton,
     QHBoxLayout,
     QTabWidget,
-    QToolBar,
-    QStyleFactory,
     QMessageBox,
     QDialog,
     QListWidget,
@@ -23,41 +21,28 @@ from PyQt6.QtWidgets import (
     QListWidgetItem,
     QSplashScreen,
     QTextBrowser,
-    QFormLayout,
     QMenu,
-    QScrollArea,
     QInputDialog,
 )
 from PyQt6.QtWebEngineWidgets import QWebEngineView
-from PyQt6.QtWebEngineCore import QWebEngineProfile, QWebEngineSettings, QWebEngineScript, QWebEnginePage, QWebEngineCertificateError, QWebEnginePermission
-from PyQt6.QtCore import QUrl, QStandardPaths, QDir, QTimer, Qt, pyqtSignal, QSize
-from PyQt6.QtGui import QPalette, QColor, QShortcut, QKeySequence, QFont, QFontDatabase, QPixmap, QIcon, QAction
-import json
-import re
-import urllib.parse
+from PyQt6.QtWebEngineCore import QWebEngineScript, QWebEnginePage
+from PyQt6.QtCore import QUrl, QTimer, Qt, QSize
+from PyQt6.QtGui import QColor, QShortcut, QKeySequence, QPixmap, QIcon, QAction
 import subprocess
-import tempfile
-import socket
-import ssl
-from urllib.parse import urlparse
-import requests
-import base64
-from datetime import datetime, timedelta
-from configobj import ConfigObj
-from validate import Validator
 import logging
-import uuid
-import time
 
 # Import refactored modules
 from creature.config.manager import config as creature_config
 from creature.security.keepassxc import keepass_manager, KeePassXCError
-from creature.utils.helpers import generate_guid, datetime_to_firefox_timestamp, firefox_timestamp_to_datetime, process_url_or_search, fetch_certificate_from_url
-from creature.security.ssl_handler import export_certificate_to_file, check_openssl_available, parse_certificate_with_openssl, check_certificate_revocation, check_ocsp_status, check_crl_status, parse_openssl_output, CertificateDetailsDialog
-from creature.ui.bookmarks import BookmarkManager, FaviconManager, BookmarkToolbar
+from creature.utils.helpers import process_url_or_search
+from creature.security.ssl_handler import CertificateDetailsDialog
+from creature.ui.bookmarks import BookmarkToolbar
+from creature.ui.session_manager import BrowserSessionManager
 from creature.config.profiles import ProfileManager
 from creature.ui.themes import ThemeManager
 from creature.browser.web_engine import SSLAwarePage
+from creature.history import HistoryManager
+from creature.ui.url_autocomplete import HistoryURLLineEdit
 
 # Application constants
 from creature import CREATURE_VERSION, CREATURE_AUTHOR, CREATURE_LICENSE
@@ -133,7 +118,7 @@ class KeePassXCWebEngineView(QWebEngineView):
             return
 
         try:
-            with open(bridge_script_path, "r", encoding="utf-8") as f:
+            with open(bridge_script_path, encoding="utf-8") as f:
                 bridge_code = f.read()
             logger.debug(f"Bridge script loaded, {len(bridge_code)} characters")
         except Exception as e:
@@ -154,7 +139,6 @@ class KeePassXCWebEngineView(QWebEngineView):
     def contextMenuEvent(self, event):
         """Override context menu to add KeePassXC options."""
         # Create our own context menu since PyQt6 doesn't have createStandardContextMenu
-        from PyQt6.QtWidgets import QMenu
 
         menu = QMenu(self)
 
@@ -247,7 +231,7 @@ class KeePassXCWebEngineView(QWebEngineView):
             return self.master_password
 
         # Prompt for master password
-        from PyQt6.QtWidgets import QInputDialog, QLineEdit
+        from PyQt6.QtWidgets import QLineEdit
 
         password, ok = QInputDialog.getText(self, "KeePassXC Master Password", "Enter your KeePassXC master password:", QLineEdit.EchoMode.Password)
 
@@ -747,7 +731,6 @@ class AboutDialog(QDialog):
 
     def open_config_folder(self, event):
         """Open the configuration file folder in system file manager."""
-        import subprocess
         import sys
 
         try:
@@ -932,13 +915,14 @@ class ProfileSelectionDialog(QDialog):
 
 
 class BrowserTab(QWidget):
-    def __init__(self, profile, url=None, profile_name=None, minimal_mode=False):
+    def __init__(self, profile, url=None, profile_name=None, minimal_mode=False, history_manager=None):
         super().__init__()
         if url is None:
             url = creature_config.general.home_page
         self.profile = profile
         self.profile_name = profile_name or "default"
         self.minimal_mode = minimal_mode
+        self.history_manager = history_manager
         layout = QVBoxLayout(self)
 
         # Navigation bar (skip in minimal mode)
@@ -1015,7 +999,14 @@ class BrowserTab(QWidget):
                 }}
             """)
 
-            self.url_bar = QLineEdit()
+            # Create URL bar with history autocomplete
+            if self.history_manager:
+                self.url_bar = HistoryURLLineEdit(self.history_manager, self)
+                self.url_bar.navigationRequested.connect(self.navigate_to_url)
+            else:
+                self.url_bar = QLineEdit()
+                self.url_bar.returnPressed.connect(self.navigate)
+
             nav_layout.addWidget(self.back_btn)
             nav_layout.addWidget(self.forward_btn)
             nav_layout.addWidget(self.refresh_btn)
@@ -1051,8 +1042,11 @@ class BrowserTab(QWidget):
             self.back_btn.clicked.connect(self.web_view.back)
             self.forward_btn.clicked.connect(self.web_view.forward)
             self.refresh_btn.clicked.connect(self.web_view.reload)
-            self.url_bar.returnPressed.connect(self.navigate)
+            # URL bar signals are already connected in constructor
         self.web_view.urlChanged.connect(self.on_url_changed)
+
+        # Connect page load finished signal for history recording
+        self.web_view.loadFinished.connect(self.on_load_finished)
 
         # Connect SSL status signals
         self.ssl_page.sslStatusChanged.connect(self.on_ssl_status_changed)
@@ -1127,6 +1121,10 @@ class BrowserTab(QWidget):
             # Update SSL indicator based on current status after styling
             self.update_ssl_indicator()
 
+        # Update URL bar theme if it's a HistoryURLLineEdit
+        if hasattr(self, "url_bar") and hasattr(self.url_bar, "refresh_theme"):
+            self.url_bar.refresh_theme()
+
     def navigate(self):
         if self.minimal_mode:
             return  # No navigation in minimal mode
@@ -1140,6 +1138,14 @@ class BrowserTab(QWidget):
     def navigate_to(self, url):
         """Navigate to a specific URL (should already be processed)."""
         self.web_view.load(QUrl(url))
+
+    def navigate_to_url(self, user_input):
+        """Navigate to URL from history autocomplete or manual input."""
+        if not user_input:
+            return
+
+        final_url, is_search = process_url_or_search(user_input)
+        self.navigate_to(final_url)
 
     def navigate_home(self):
         """Navigate to the home page."""
@@ -1237,11 +1243,17 @@ class BrowserTab(QWidget):
         current_label.setStyleSheet("color: #666; font-size: 11px;")
         layout.addWidget(current_label)
 
-        # URL input
-        url_input = QLineEdit()
-        url_input.setPlaceholderText("Enter URL or search term...")
-        url_input.setText(current_url)  # Pre-fill with current URL
-        url_input.selectAll()  # Select all text for easy replacement
+        # URL input with history autocomplete
+        if self.history_manager:
+            url_input = HistoryURLLineEdit(self.history_manager, dialog)
+            url_input.setPlaceholderText("Enter URL or search term...")
+            url_input.setText(current_url)  # Pre-fill with current URL
+            url_input.selectAll()  # Select all text for easy replacement
+        else:
+            url_input = QLineEdit()
+            url_input.setPlaceholderText("Enter URL or search term...")
+            url_input.setText(current_url)  # Pre-fill with current URL
+            url_input.selectAll()  # Select all text for easy replacement
         url_input.setStyleSheet(f"""
             QLineEdit {{
                 padding: 8px 12px;
@@ -1293,6 +1305,13 @@ class BrowserTab(QWidget):
         go_btn.clicked.connect(navigate_to_url)
         url_input.returnPressed.connect(navigate_to_url)  # Enter key support
 
+        # Connect navigation signal for HistoryURLLineEdit
+        if hasattr(url_input, 'navigationRequested'):
+            def handle_autocomplete_navigation(url):
+                self.navigate_to(url)
+                dialog.accept()
+            url_input.navigationRequested.connect(handle_autocomplete_navigation)
+
         # Show dialog and focus on input
         dialog.show()
         url_input.setFocus()
@@ -1317,6 +1336,26 @@ class BrowserTab(QWidget):
         logger.debug(f"SSL status changed: {ssl_info}")
         self.ssl_status.update(ssl_info)
         self.update_ssl_indicator()
+
+    def on_load_finished(self, success):
+        """Handle page load completion for history recording."""
+        if not success or not self.history_manager:
+            return
+
+        try:
+            url = self.web_view.url().toString()
+            title = self.web_view.title()
+
+            # Skip internal URLs and invalid URLs
+            if not url or url.startswith('about:') or url.startswith('data:'):
+                return
+
+            # Record the visit in history
+            self.history_manager.record_visit(url, title)
+            logger.debug(f"Recorded history visit: {url[:50]}{'...' if len(url) > 50 else ''}")
+
+        except Exception as e:
+            logger.error(f"Failed to record history visit: {e}")
 
     def update_ssl_indicator(self):
         """Update SSL indicator based on current status."""
@@ -1404,13 +1443,14 @@ class BrowserTab(QWidget):
 
 
 class CreatureBrowser(QMainWindow):
-    def __init__(self, profile_name=None, force_new_window=None, theme=None, minimal_mode=False):
+    def __init__(self, profile_name=None, force_new_window=None, theme=None, minimal_mode=False, session_name=None):
         super().__init__()
 
         # Use config values if not overridden by arguments
         self.force_new_window = force_new_window if force_new_window is not None else creature_config.general.force_new_window
         self.minimal_mode = minimal_mode
         self.profile_name = profile_name or creature_config.general.default_profile
+        self.session_name = session_name
 
         # Get profile-specific theme if configured
         profile_theme = ""
@@ -1428,6 +1468,24 @@ class CreatureBrowser(QMainWindow):
             profile_dir = Path.home() / profile_dir
         self.profile_manager = ProfileManager(profile_dir)
         self.profile = self.profile_manager.create_profile(self.profile_name)
+
+        # Initialize session manager for this profile
+        self.browser_session_manager = BrowserSessionManager(self)
+
+        # Initialize history manager for this profile
+        self.history_manager = HistoryManager(self.profile_name, self.profile_manager.base_dir)
+
+        # Configure history manager with settings
+        if hasattr(creature_config, 'history'):
+            history_config = {
+                'enabled': creature_config.history.enabled,
+                'retention_days': creature_config.history.retention_days,
+                'max_entries': creature_config.history.max_entries,
+                'autocomplete_max_results': creature_config.history.autocomplete_max_results,
+                'cleanup_interval_minutes': creature_config.history.cleanup_interval_minutes,
+                'ordering': creature_config.history.ordering
+            }
+            self.history_manager.update_config(history_config)
 
         # Get profile-specific title suffix
         title_suffix = ""
@@ -1454,7 +1512,7 @@ class CreatureBrowser(QMainWindow):
 
         if self.minimal_mode:
             # Minimal mode: single tab, no navigation bar, no menu
-            self.single_tab = BrowserTab(self.profile, profile_name=self.profile_name, minimal_mode=True)
+            self.single_tab = BrowserTab(self.profile, profile_name=self.profile_name, minimal_mode=True, history_manager=self.history_manager)
             self.setCentralWidget(self.single_tab)
         elif not self.force_new_window:
             # Tab widget for normal mode
@@ -1469,7 +1527,7 @@ class CreatureBrowser(QMainWindow):
             self.setup_tab_shortcuts()
         else:
             # Single tab mode for window manager
-            self.single_tab = BrowserTab(self.profile, profile_name=self.profile_name)
+            self.single_tab = BrowserTab(self.profile, profile_name=self.profile_name, history_manager=self.history_manager)
             self.setCentralWidget(self.single_tab)
 
         # Set up hamburger menu (replaces traditional menu bar) - skip in minimal mode
@@ -1479,8 +1537,8 @@ class CreatureBrowser(QMainWindow):
     def setup_hamburger_menu(self):
         """Set up hamburger menu button in tab bar (replaces traditional menu bar)."""
         from PyQt6.QtWidgets import QPushButton
-        from PyQt6.QtGui import QIcon, QPixmap
-        from PyQt6.QtCore import Qt, QSize
+        from PyQt6.QtGui import QIcon
+        from PyQt6.QtCore import Qt
         from pathlib import Path
 
         # Create hamburger menu button
@@ -1582,7 +1640,6 @@ class CreatureBrowser(QMainWindow):
 
     def show_hamburger_menu(self):
         """Show the hamburger menu with all menu options."""
-        from PyQt6.QtWidgets import QMenu
 
         menu = QMenu(self)
 
@@ -1598,6 +1655,34 @@ class CreatureBrowser(QMainWindow):
         new_window_action.setShortcut("Ctrl+N")
         new_window_action.triggered.connect(self.new_window)
         menu.addAction(new_window_action)
+
+        # Sessions section - only in normal mode (not minimal mode)
+        if not self.force_new_window:
+            sessions_submenu = menu.addMenu("Sessions")
+
+            # Save current session
+            save_session_action = QAction("Save Current Session...", self)
+            save_session_action.setShortcut("Ctrl+Shift+S")
+            save_session_action.triggered.connect(self.save_current_session_dialog)
+            sessions_submenu.addAction(save_session_action)
+
+            sessions_submenu.addSeparator()
+
+            # Load session submenu
+            available_sessions = self.browser_session_manager.get_available_sessions()
+            if available_sessions:
+                for session_name in available_sessions:
+                    display_name = f"{session_name} (auto-saved)" if session_name == "last" else session_name
+                    load_action = QAction(f"Load '{display_name}'", self)
+                    load_action.triggered.connect(lambda checked, name=session_name: self.load_session_by_name(name))
+                    sessions_submenu.addAction(load_action)
+
+                sessions_submenu.addSeparator()
+
+            # Manage sessions
+            manage_sessions_action = QAction("Manage Sessions...", self)
+            manage_sessions_action.triggered.connect(self.show_session_manager_dialog)
+            sessions_submenu.addAction(manage_sessions_action)
 
         menu.addSeparator()
 
@@ -1649,7 +1734,7 @@ class CreatureBrowser(QMainWindow):
             self.new_window(url)
             return
 
-        tab = BrowserTab(self.profile, url, profile_name=self.profile_name)
+        tab = BrowserTab(self.profile, url, profile_name=self.profile_name, history_manager=self.history_manager)
         index = self.tabs.addTab(tab, "New Tab")
         self.tabs.setCurrentIndex(index)
 
@@ -1662,6 +1747,10 @@ class CreatureBrowser(QMainWindow):
         # Update tab title when page title changes
         tab.web_view.titleChanged.connect(lambda title, idx=index: self.update_tab_title(idx, title))
 
+        # Update tab favicon when page icon changes (if enabled)
+        if creature_config.browser.show_tab_favicons:
+            tab.web_view.iconChanged.connect(lambda icon, idx=index: self.update_tab_icon(idx, icon))
+
     def update_tab_title(self, index, title):
         try:
             if hasattr(self, "tabs") and self.tabs and index < self.tabs.count():
@@ -1672,14 +1761,26 @@ class CreatureBrowser(QMainWindow):
             logger.debug(f"Tab title update skipped (widget deleted): {e}")
             pass
 
+    def update_tab_icon(self, index, icon):
+        try:
+            if hasattr(self, "tabs") and self.tabs and index < self.tabs.count():
+                # Set the favicon for the tab
+                self.tabs.setTabIcon(index, icon)
+        except (RuntimeError, AttributeError) as e:
+            # Widget has been deleted or is being destroyed - ignore
+            logger.debug(f"Tab icon update skipped (widget deleted): {e}")
+            pass
+
     def close_tab(self, index):
         if hasattr(self, "tabs"):
             try:
                 # Get the tab widget before removing it
                 tab_widget = self.tabs.widget(index)
                 if tab_widget and hasattr(tab_widget, "web_view"):
-                    # Disconnect titleChanged signal to prevent late updates
+                    # Disconnect signals to prevent late updates
                     tab_widget.web_view.titleChanged.disconnect()
+                    if creature_config.browser.show_tab_favicons:
+                        tab_widget.web_view.iconChanged.disconnect()
 
                 if self.tabs.count() > 1:
                     self.tabs.removeTab(index)
@@ -1775,6 +1876,19 @@ class CreatureBrowser(QMainWindow):
         new_window_shortcut = QShortcut(QKeySequence("Ctrl+N"), self)
         new_window_shortcut.activated.connect(self.new_window)
 
+        # Session shortcuts
+        # Ctrl+Shift+S - Save current session (already defined in menu)
+        save_session_shortcut = QShortcut(QKeySequence("Ctrl+Shift+S"), self)
+        save_session_shortcut.activated.connect(self.save_current_session_dialog)
+
+        # Ctrl+Shift+O - Open session manager
+        manage_sessions_shortcut = QShortcut(QKeySequence("Ctrl+Shift+O"), self)
+        manage_sessions_shortcut.activated.connect(self.show_session_manager_dialog)
+
+        # Ctrl+Shift+L - Load last session (if it exists)
+        load_last_shortcut = QShortcut(QKeySequence("Ctrl+Shift+L"), self)
+        load_last_shortcut.activated.connect(lambda: self.load_session_by_name("last") if self.browser_session_manager.has_last_session() else None)
+
     def next_tab(self):
         """Switch to the next tab."""
         if not hasattr(self, "tabs") or self.tabs.count() <= 1:
@@ -1793,6 +1907,26 @@ class CreatureBrowser(QMainWindow):
         prev_index = (current_index - 1) % self.tabs.count()
         self.tabs.setCurrentIndex(prev_index)
 
+    def closeEvent(self, event):
+        """Handle window close event - auto-save session before closing."""
+        try:
+            # Auto-save current session as "last"
+            self.browser_session_manager.save_last_session()
+            logger.debug("Auto-saved session before closing")
+        except Exception as e:
+            logger.error(f"Failed to auto-save session on close: {e}")
+
+        try:
+            # Shutdown history manager
+            if hasattr(self, 'history_manager'):
+                self.history_manager.shutdown()
+                logger.debug("History manager shutdown completed")
+        except Exception as e:
+            logger.error(f"Failed to shutdown history manager: {e}")
+
+        # Continue with normal close
+        super().closeEvent(event)
+
     def __del__(self):
         """Cleanup CreatureBrowser to prevent race conditions during shutdown."""
         try:
@@ -1809,6 +1943,27 @@ class CreatureBrowser(QMainWindow):
             logger.debug("CreatureBrowser cleanup completed")
         except Exception as e:
             logger.debug(f"CreatureBrowser cleanup error (normal during shutdown): {e}")
+
+    def load_session_by_name(self, session_name: str) -> bool:
+        """Load a session by name - delegates to session manager."""
+        return self.browser_session_manager.load_session_by_name(session_name)
+
+    def save_current_session_dialog(self):
+        """Show dialog to save current session."""
+        from creature.ui.session_dialogs import SaveSessionDialog
+
+        dialog = SaveSessionDialog(self)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            session_name = dialog.get_session_name()
+            if session_name:
+                self.browser_session_manager.save_current_session(session_name)
+
+    def show_session_manager_dialog(self):
+        """Show the session management dialog."""
+        from creature.ui.session_dialogs import SessionManagerDialog
+
+        dialog = SessionManagerDialog(self.browser_session_manager, self)
+        dialog.exec()
 
 
 def setup_wayland_compatibility():
@@ -1913,6 +2068,7 @@ def main():
     parser.add_argument("--config", "-c", default=None, help="Path to configuration file")
     parser.add_argument("--no-profile-prompt", action="store_true", help="Don't prompt for profile selection")
     parser.add_argument("--minimal", "-m", action="store_true", help="Minimal mode: no tabs, no menu, no navigation bar")
+    parser.add_argument("--session", "-s", default=None, help="Load a saved session by name")
 
     args = parser.parse_args()
 
@@ -1967,7 +2123,7 @@ def main():
         profile_name = creature_config.general.default_profile
 
     # Create browser with command line overrides
-    browser = CreatureBrowser(profile_name=profile_name, force_new_window=None, theme=args.theme, minimal_mode=args.minimal)
+    browser = CreatureBrowser(profile_name=profile_name, force_new_window=None, theme=args.theme, minimal_mode=args.minimal, session_name=args.session)
 
     # Apply theme (browser already determined the correct theme based on profile)
     theme_manager = ThemeManager()
@@ -1991,12 +2147,17 @@ def main():
     if splash:
         splash.finish(browser)
 
-    # Load initial URL
-    initial_url = args.url or creature_config.general.home_page
-    if hasattr(browser, "single_tab"):
-        browser.single_tab.navigate_to(initial_url)
+    # Load initial content - either a session or a single URL
+    if args.session:
+        # Load the specified session
+        browser.load_session_by_name(args.session)
     else:
-        browser.add_new_tab(initial_url)
+        # Load initial URL as normal
+        initial_url = args.url or creature_config.general.home_page
+        if hasattr(browser, "single_tab"):
+            browser.single_tab.navigate_to(initial_url)
+        else:
+            browser.add_new_tab(initial_url)
 
     sys.exit(app.exec())
 

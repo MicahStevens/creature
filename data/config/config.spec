@@ -93,6 +93,9 @@ plugins_enabled = boolean(default=True)
 # Tab close behavior (close_window or show_last_tab)
 tab_close_behavior = option('close_window', 'show_last_tab', default='close_window')
 
+# Show favicons in tabs
+show_tab_favicons = boolean(default=True)
+
 [wayland]
 # Disable window decoration
 disable_window_decoration = boolean(default=False)
@@ -155,6 +158,25 @@ show_context_menu = boolean(default=True)
 
 # Clipboard timeout in seconds when copying credentials
 clip_timeout = integer(min=0, max=300, default=10)
+
+[history]
+# Enable browsing history and autocomplete
+enabled = boolean(default=True)
+
+# Number of days to retain history entries (0 = keep forever)
+retention_days = integer(min=0, max=365, default=30)
+
+# Maximum number of history entries to keep (0 = no limit)
+max_entries = integer(min=0, max=100000, default=10000)
+
+# Maximum number of autocomplete results to show
+autocomplete_max_results = integer(min=1, max=50, default=10)
+
+# How often to run cleanup (in minutes)
+cleanup_interval_minutes = integer(min=1, max=1440, default=60)
+
+# Order autocomplete results by 'recent' (last visited) or 'visits' (visit count)
+ordering = option('recent', 'visits', default='visits')
 
 [logging]
 # Log level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
