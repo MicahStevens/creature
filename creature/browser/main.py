@@ -43,6 +43,7 @@ from creature.ui.themes import ThemeManager
 from creature.browser.web_engine import SSLAwarePage
 from creature.history import HistoryManager
 from creature.ui.url_autocomplete import HistoryURLLineEdit
+from creature.ui.history_editor import HistoryEditorWidget
 
 # Application constants
 from creature import CREATURE_VERSION, CREATURE_AUTHOR, CREATURE_LICENSE
@@ -1686,6 +1687,14 @@ class CreatureBrowser(QMainWindow):
 
         menu.addSeparator()
 
+        # History section
+        history_action = QAction("Browsing History...", self)
+        history_action.setShortcut("Ctrl+H")
+        history_action.triggered.connect(self.open_history_editor)
+        menu.addAction(history_action)
+
+        menu.addSeparator()
+
         # Profile section
         profile_info_action = QAction(f"Profile: {self.profile_name.capitalize()} - Info", self)
         profile_info_action.triggered.connect(self.show_profile_info)
@@ -1889,6 +1898,10 @@ class CreatureBrowser(QMainWindow):
         load_last_shortcut = QShortcut(QKeySequence("Ctrl+Shift+L"), self)
         load_last_shortcut.activated.connect(lambda: self.load_session_by_name("last") if self.browser_session_manager.has_last_session() else None)
 
+        # Ctrl+H - Open history editor
+        history_shortcut = QShortcut(QKeySequence("Ctrl+H"), self)
+        history_shortcut.activated.connect(self.open_history_editor)
+
     def next_tab(self):
         """Switch to the next tab."""
         if not hasattr(self, "tabs") or self.tabs.count() <= 1:
@@ -1964,6 +1977,55 @@ class CreatureBrowser(QMainWindow):
 
         dialog = SessionManagerDialog(self.browser_session_manager, self)
         dialog.exec()
+
+    def open_history_editor(self):
+        """Open the history editor in a new tab."""
+        if self.minimal_mode or self.force_new_window:
+            # In minimal mode or force new window mode, show as dialog
+            self._show_history_editor_dialog()
+            return
+
+        # Create history editor widget
+        history_editor = HistoryEditorWidget(self.history_manager, self)
+
+        # Connect navigation signal to open URLs in new tabs
+        history_editor.navigationRequested.connect(self.add_new_tab)
+
+        # Add as tab
+        if hasattr(self, 'tabs'):
+            index = self.tabs.addTab(history_editor, "History")
+            self.tabs.setCurrentIndex(index)
+
+            # Apply current theme
+            history_editor.refresh_theme()
+
+    def _show_history_editor_dialog(self):
+        """Show history editor as a dialog for minimal/force new window modes."""
+        from PyQt6.QtWidgets import QDialog, QVBoxLayout
+
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Browsing History")
+        dialog.setModal(False)  # Allow interaction with main window
+        dialog.resize(900, 600)
+
+        layout = QVBoxLayout(dialog)
+        layout.setContentsMargins(0, 0, 0, 0)
+
+        # Create history editor
+        history_editor = HistoryEditorWidget(self.history_manager, dialog)
+
+        # Connect navigation to close dialog and open URL
+        def handle_navigation(url):
+            dialog.accept()
+            if hasattr(self, 'single_tab'):
+                self.single_tab.navigate_to(url)
+            else:
+                self.add_new_tab(url)
+
+        history_editor.navigationRequested.connect(handle_navigation)
+        layout.addWidget(history_editor)
+
+        dialog.show()
 
 
 def setup_wayland_compatibility():
