@@ -1,4 +1,7 @@
 ![Creature](./data/images/splash2.png)
+# Abandoned
+I got into a big rabbit hole trying to get video chat (Teams,Meet, etc) working.. and then figured out I could do something like [Brolaunch](https://github.com/MicahStevens/brolaunch) instead, and not have to redesign the wheel. So I'm probably not going to work on this any more even though I really like the monster logo. 
+
 # Creature Browser
 
 My primary gripes that I wanted to address were:
